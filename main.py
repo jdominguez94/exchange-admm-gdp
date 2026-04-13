@@ -25,6 +25,7 @@ from gdp_pkg.profiles import build_profiles
 from gdp_pkg.population import build_population
 from gdp_pkg.baseline import solve_baselines
 from gdp_pkg.admm import run_exchange_admm
+from gdp_pkg.vss import compute_vss
 
 
 def main() -> None:
@@ -52,7 +53,7 @@ def main() -> None:
         max_iter=200,
         eps_primal=1e-3,
         eps_dual=1e-3,
-        mu_res=20.0,
+        mu_res=10.0,
         tau_incr=1.2,
         rho_max=10.0,
         rho_min=1e-4,
@@ -83,12 +84,17 @@ def main() -> None:
     # ── Resultados ─────────────────────────────────────────────────────
     _print_results(cfg, pop, baseline, result)
 
+    print("5. Calculando VSS (Problema EV con S=1)...")
+    vss_result = compute_vss(cfg, admm_cfg, pop, baseline, result)
+    _print_vss(vss_result)
+
     # ── Guardar ────────────────────────────────────────────────────────
     os.makedirs('results', exist_ok=True)
     fname = f'results/gdp_admm_N{cfg.N}_S{cfg.S}.pkl'
     with open(fname, 'wb') as f:
         pickle.dump({
             'cfg': cfg, 'admm_cfg': admm_cfg, 'result': result,
+            'vss': vss_result,
         }, f)
     print(f"\nResultados guardados en: {fname}")
     print(f"Tiempo total: {time.time() - t0:.1f}s")
@@ -157,6 +163,21 @@ def _print_results(cfg, pop, baseline, result) -> None:
     print(f"  FSPs activos   : {participating}/{cfg.N}")
     print(f"  Iteraciones    : {len(result.hist.res_primal)}")
     print(f"  Wall time      : {result.wall_time:.1f}s")
+
+
+def _print_vss(vss_result) -> None:
+    ev = vss_result.ev_solution
+    print()
+    print("=" * 65)
+    print("VSS — Value of the Stochastic Solution")
+    print("=" * 65)
+    print(f"  Profit SP  (estocástico) : {vss_result.profit_sp:>10.4f} CAD")
+    print(f"  Profit EEV (det. → stoc) : {vss_result.profit_eev:>10.4f} CAD")
+    print(f"  VSS = SP − EEV           : {vss_result.vss:>10.4f} CAD"
+          f"  ({'≥0 ✓' if vss_result.vss >= -1e-6 else '<!> negativo'})")
+    print(f"  η_ev                     : {ev.eta_mean:>10.3f} kW")
+    print(f"  c_max_ev                 : {ev.c_max:>10.3f} kWh")
+    print(f"  F_ev medio por FSP       : {ev.F_all.mean():>10.4f} kWh")
 
 
 if __name__ == '__main__':
