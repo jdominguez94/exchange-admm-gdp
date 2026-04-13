@@ -1,0 +1,163 @@
+"""
+main.py — Punto de entrada para el modelo GDP Bloc 1 (Hydro-Québec).
+
+Uso:
+    python main.py
+
+Patrón: Facade — expone una API simple sobre el pipeline completo:
+  1. Construir perfiles base (temperatura, NSL)
+  2. Generar población de FSPs con parámetros heterogéneos
+  3. Resolver baselines QP y calcular headroom de flexibilidad
+  4. Ejecutar Exchange ADMM hasta convergencia
+  5. Imprimir y guardar resultados
+"""
+
+import os
+import time
+import pickle
+import warnings
+import numpy as np
+
+warnings.filterwarnings('ignore', category=UserWarning)
+
+from gdp_pkg.config import GDPConfig, ADMMConfig
+from gdp_pkg.profiles import build_profiles
+from gdp_pkg.population import build_population
+from gdp_pkg.baseline import solve_baselines
+from gdp_pkg.admm import run_exchange_admm
+
+
+def main() -> None:
+    # ── Configuración ──────────────────────────────────────────────────
+    cfg = GDPConfig(
+        N=60, T=96, dt=0.25, S=10,
+        SEED=42, N_WORKERS=96,
+        GDP_RATE_WINTER=5.5,
+        p_act=0.52, pi_t=0.0621,
+        gamma=0.00, p_CLC_factor=1.5,
+        p_res=2.0, C_max=15.0,
+        eta_min=10.0, eta_max=100.0,
+        ALPHA_HEADROOM=0.8,
+        SIGMA_BASELINE=0.03,
+        OMEGA_PLAGE=np.array([0.55, 0.11, 0.34]),
+        H_AM_START=6, H_AM_END=9,
+        H_PM_START=16, H_PM_END=20,
+        GRUPOS_ALPHA={'A': 15, 'B': 15, 'C': 15, 'D': 15},
+        theta_s=0.2,
+    )
+    cfg.validate()
+
+    admm_cfg = ADMMConfig(
+        rho=0.05,
+        max_iter=200,
+        eps_primal=1e-3,
+        eps_dual=1e-3,
+        mu_res=20.0,
+        tau_incr=1.2,
+        rho_max=10.0,
+        rho_min=1e-4,
+    )
+
+    rng = np.random.default_rng(cfg.SEED)
+
+    _print_config(cfg)
+
+    # ── Pipeline ───────────────────────────────────────────────────────
+    t0 = time.time()
+
+    print("1. Construyendo perfiles...")
+    profiles = build_profiles(cfg)
+
+    print("2. Generando población de FSPs...")
+    pop = build_population(cfg, profiles, rng)
+    print(f"   θ = {pop.theta:.4f} CAD/°C²  |  K = {len(pop.K_idx)} periodos")
+
+    print("3. Calculando baselines QP...")
+    baseline = solve_baselines(cfg, pop, profiles)
+    print(f"   η_max_eff = {baseline.eta_max_eff:.2f} kW  |"
+          f"  F_cap medio = {baseline.F_cap.mean():.3f} kWh/FSP")
+
+    print("4. Exchange ADMM...")
+    result = run_exchange_admm(cfg, admm_cfg, pop, baseline)
+
+    # ── Resultados ─────────────────────────────────────────────────────
+    _print_results(cfg, pop, baseline, result)
+
+    # ── Guardar ────────────────────────────────────────────────────────
+    os.makedirs('results', exist_ok=True)
+    fname = f'results/gdp_admm_N{cfg.N}_S{cfg.S}.pkl'
+    with open(fname, 'wb') as f:
+        pickle.dump({
+            'cfg': cfg, 'admm_cfg': admm_cfg, 'result': result,
+        }, f)
+    print(f"\nResultados guardados en: {fname}")
+    print(f"Tiempo total: {time.time() - t0:.1f}s")
+
+
+def _print_config(cfg: GDPConfig) -> None:
+    print("=" * 65)
+    print("GDP BLOC 1 — FINANCIAL PARAMETERS (15-min resolution)")
+    print("=" * 65)
+    print(f"  N={cfg.N} FSPs  |  T={cfg.T} periodos  |  S={cfg.S} escenarios")
+    print(f"  p_av   = {cfg.p_av:.3f} CAD/kW  (crédito GDP)")
+    print(f"  p_act  = {cfg.p_act:.4f} CAD/kWh  (activación)")
+    print(f"  p_dev  = {cfg.p_dev:.4f} CAD/kWh  (penalidad shortfall)")
+    print(f"  p_CLC  = {cfg.p_CLC:.4f} CAD/kWh  (backup industrial)")
+    print(f"  η_max  = {cfg.eta_max:.0f} kW  |  η_min = {cfg.eta_min:.0f} kW")
+    print(f"  ω = {cfg.OMEGA_PLAGE}  (AM, PM, AM+PM)")
+    print()
+
+
+def _print_results(cfg, pop, baseline, result) -> None:
+    K_DOBLE = np.concatenate([pop.K_AM, pop.K_PM])
+    J       = cfg.N + 1
+
+    sum_Ft_sk   = result.F_tilde_all.sum(axis=1)
+    sum_Ft_exp  = (pop.omega[:, None] * sum_Ft_sk).sum(axis=0)
+    sum_Ft_full = np.zeros(len(K_DOBLE))
+    k_mask = np.isin(K_DOBLE, pop.K_idx)
+    k_pos  = np.array([pop.K_idx.index(k) for k in K_DOBLE[k_mask]])
+    sum_Ft_full[k_mask] = sum_Ft_exp[k_pos]
+
+    balance = result.q_k - result.c_k - sum_Ft_full
+
+    rev_avail  = cfg.p_av * result.eta_k.mean() - cfg.p_res * result.c_max_opt
+    exp_act    = 0.0
+    for sp in range(len(cfg.OMEGA_PLAGE)):
+        local_pos = np.array([np.where(K_DOBLE == k)[0][0]
+                               for k in pop.K_PLAGE[sp]])
+        q_sp  = result.q_k[local_pos]
+        c_sp  = result.c_k[local_pos]
+        exp_act += cfg.OMEGA_PLAGE[sp] * (
+            cfg.p_act * np.sum(q_sp)
+            - cfg.p_CLC * np.sum(c_sp)
+            - cfg.p_dev * max(0.0,
+                result.eta_k.mean() - np.sum(q_sp) / (len(q_sp) * cfg.dt))
+        )
+    profit_final = rev_avail + exp_act
+    participating = int(np.sum(result.F_all.sum(axis=1) > 1e-3))
+
+    print()
+    print("=" * 65)
+    print(f"RESULTADOS  (N={cfg.N}, J={J}, dt=15min, S={cfg.S})")
+    print("=" * 65)
+    print(f"  λ (clearing)  : media={result.lam.mean():.5f}"
+          f"  [{result.lam.min():.5f}, {result.lam.max():.5f}] CAD/periodo")
+    print(f"  η_k            : media={result.eta_k.mean():.3f} kW"
+          f"  (eff={baseline.eta_max_eff:.2f} kW)")
+    print(f"  E[q^s_k]       : {result.q_k.mean():.4f} kWh")
+    print(f"  E[r^s_k]       : {result.r_k.mean():.4f} kWh  (shortfall)")
+    print(f"  E[c^s_k]       : {result.c_k.mean():.4f} kWh  (CLC)")
+    print(f"  E[ΣF̃^s_k]      : {sum_Ft_full.mean():.4f} kWh  (FSPs)")
+    print(f"  Balance q-c-ΣF̃ : {balance.mean():+.6f}  ← debe → 0")
+    print(f"  Profit total   : {profit_final:.4f} CAD"
+          f"  (ventana {len(pop.K_idx) * cfg.dt:.0f}h)")
+    print(f"  Equiv. mensual : {profit_final / (len(pop.K_idx) * cfg.dt) * 730:.2f} CAD/mes")
+    print(f"  C_max óptimo   : {result.c_max_opt:.3f} kWh")
+    print(f"  FSPs activos   : {participating}/{cfg.N}")
+    print(f"  Iteraciones    : {len(result.hist.res_primal)}")
+    print(f"  Wall time      : {result.wall_time:.1f}s")
+
+
+if __name__ == '__main__':
+    main()
