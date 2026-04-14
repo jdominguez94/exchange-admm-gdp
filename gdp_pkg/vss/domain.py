@@ -68,6 +68,63 @@ class VSSResult:
 
 # ── Fórmula de profit (capa domain, sin CVXPY) ────────────────────────────────
 
+def _profit_from_F(
+    F_all: np.ndarray,          # (N, K) oferta no-anticipativa de FSPs [kWh]
+    eta_val: float,             # potencia declarada [kW]
+    c_max: float,               # capacidad CLC contratada [kWh/periodo]
+    p_av: float,
+    p_act: float,
+    p_CLC: float,
+    p_dev: float,
+    p_res: float,
+    gamma: float,
+    dt: float,
+    omega_plage: np.ndarray,    # (S_plage,)
+    k_plage: dict,              # {sp: array de índices K}
+    k_idx: list,                # K_idx — lista de periodos de flexibilidad
+) -> float:
+    """Profit del agregador usando recourse óptimo cerrado por escenario GDP.
+
+    Válido tanto para SP (F_all = sp_result.F_all) como para EEV (F_all = ev_sol.F_all).
+
+    El recourse c^sp_k = clip(η·dt − F_sum_k, 0, c_max) es óptimo porque
+    el gradiente del profit respecto a c^sp_k es positivo en régimen de
+    shortfall (p_act − p_CLC + p_dev > 0) y negativo fuera de él
+    (p_act − p_CLC < 0) → siempre conviene llenar el gap hasta c_max.
+
+    Nota: q_k y c_k de ADMMResult son promedios ω-ponderados sobre los 3
+    escenarios GDP (necesarios para el acoplamiento ADMM en espacio esperado),
+    NO valores por escenario. Usarlos directamente en esta fórmula introduce
+    una doble ponderación ω que genera un shortfall artificial.
+    """
+    rev_avail = (p_av - gamma) * eta_val - p_res * c_max
+    F_sum     = F_all.sum(axis=0)       # (K,) — suma sobre N FSPs
+    k_idx_arr = np.asarray(k_idx)
+    exp_act   = 0.0
+
+    for sp, w in enumerate(omega_plage):
+        k_pos = np.array([
+            int(np.where(k_idx_arr == k)[0][0]) for k in k_plage[sp]
+        ])
+        F_sp  = F_sum[k_pos]                         # (|K^sp|,) [kWh]
+        gap   = eta_val * dt - F_sp                  # déficit por periodo [kWh]
+        c_sp  = np.clip(gap, 0.0, c_max)             # CLC óptimo [kWh]
+        q_sp  = F_sp + c_sp                          # entrega total [kWh]
+
+        q_total   = float(np.sum(q_sp))
+        c_total   = float(np.sum(c_sp))
+        n_periods = len(k_pos)
+        shortfall = max(0.0, eta_val - q_total / (n_periods * dt))
+
+        exp_act += w * (
+            p_act * q_total
+            - p_CLC * c_total
+            - p_dev * shortfall
+        )
+
+    return rev_avail + exp_act
+
+
 def compute_profit(
     p_av: float,
     p_act: float,
@@ -76,35 +133,24 @@ def compute_profit(
     p_res: float,
     gamma: float,
     dt: float,
-    omega_plage: np.ndarray,        # (S_plage,)
-    k_plage: dict,                   # {sp: array of K indices}
-    k_doble: np.ndarray,             # (K_full,) mapping K_idx → K_full position
-    eta_k: np.ndarray,               # (K_full,) o broadcast scalar
-    c_max: float,
-    q_k: np.ndarray,                 # (K_full,) entrega ponderada por ω [kWh]
-    c_k: np.ndarray,                 # (K_full,) CLC ponderado [kWh]
+    omega_plage: np.ndarray,    # (S_plage,)
+    k_plage: dict,              # {sp: array de índices K}
+    k_idx: list,                # K_idx — lista de periodos de flexibilidad
+    F_all: np.ndarray,          # (N, K) oferta no-anticipativa del SP [kWh]
+    eta_val: float,             # potencia declarada [kW]
+    c_max: float,               # capacidad CLC contratada [kWh/periodo]
 ) -> float:
-    """Calcula el profit esperado del agregador.
+    """Calcula el profit de la solución estocástica (SP).
 
-    Fórmula (espejo de admm._compute_profit):
-      rev = (p_av - γ)·η_mean - p_res·c_max
-      act = Σ_sp ω_sp · [p_act·Σq - p_CLC·Σc - p_dev·max(0, η - mean_q/dt)]
+    Reconstruye el recourse óptimo por escenario GDP desde F_all
+    (oferta no-anticipativa de los FSPs), en lugar de usar q_k/c_k
+    de ADMMResult que son promedios ω-ponderados.
     """
-    eta_mean  = float(np.mean(eta_k))
-    rev_avail = (p_av - gamma) * eta_mean - p_res * c_max
-    exp_act   = 0.0
-    for sp, w in enumerate(omega_plage):
-        local_pos = np.array([
-            int(np.where(k_doble == k)[0][0]) for k in k_plage[sp]
-        ])
-        q_sp  = q_k[local_pos]
-        c_sp  = c_k[local_pos]
-        exp_act += w * (
-            p_act * float(np.sum(q_sp))
-            - p_CLC * float(np.sum(c_sp))
-            - p_dev * max(0.0, eta_mean - float(np.sum(q_sp)) / (len(q_sp) * dt))
-        )
-    return rev_avail + exp_act
+    return _profit_from_F(
+        F_all, eta_val, c_max,
+        p_av, p_act, p_CLC, p_dev, p_res, gamma, dt,
+        omega_plage, k_plage, k_idx,
+    )
 
 
 def compute_eev_profit(
@@ -115,46 +161,20 @@ def compute_eev_profit(
     p_res: float,
     gamma: float,
     dt: float,
-    omega_plage: np.ndarray,        # (S_plage,) = [0.55, 0.11, 0.34]
-    k_plage: dict,                   # {sp: array de índices K}
-    k_idx: list,                     # lista K_idx (igual que K_DOBLE)
+    omega_plage: np.ndarray,    # (S_plage,) = [0.55, 0.11, 0.34]
+    k_plage: dict,              # {sp: array de índices K}
+    k_idx: list,                # K_idx — lista de periodos de flexibilidad
     ev_sol: DetEquivSolution,
 ) -> float:
     """Evalúa el profit usando las decisiones EV bajo los escenarios GDP reales.
 
-    Recourse de segunda etapa (forma cerrada, sin CVXPY):
-      gap_k  = η_ev·dt - F_ev_sum_k
+    Recourse de segunda etapa (forma cerrada):
+      gap_k  = η_ev·dt − F_ev_sum_k
       c_ev_k = clip(gap_k, 0, c_max_ev)
-      r_ev_k = max(0, gap_k - c_ev_k)
       q_ev_k = F_ev_sum_k + c_ev_k
     """
-    eta_ev      = ev_sol.eta_mean
-    c_max_ev    = ev_sol.c_max
-    F_ev_sum    = ev_sol.F_all.sum(axis=0)   # (K,)
-    k_idx_arr   = np.asarray(k_idx)
-
-    rev_avail = (p_av - gamma) * eta_ev - p_res * c_max_ev
-    exp_act   = 0.0
-
-    for sp, w in enumerate(omega_plage):
-        active_k = k_plage[sp]
-        # Posición de cada k activo dentro de K_idx
-        k_pos = np.array([int(np.where(k_idx_arr == k)[0][0]) for k in active_k])
-
-        F_sum = F_ev_sum[k_pos]                          # (|K^sp|,) [kWh]
-        gap   = eta_ev * dt - F_sum                      # [kWh]
-        c_ev  = np.clip(gap, 0.0, c_max_ev)             # [kWh]
-        q_ev  = F_sum + c_ev                             # [kWh]
-
-        q_total   = float(np.sum(q_ev))
-        c_total   = float(np.sum(c_ev))
-        n_periods = len(active_k)
-        shortfall = max(0.0, eta_ev - q_total / (n_periods * dt))
-
-        exp_act += w * (
-            p_act * q_total
-            - p_CLC * c_total
-            - p_dev * shortfall
-        )
-
-    return rev_avail + exp_act
+    return _profit_from_F(
+        ev_sol.F_all, ev_sol.eta_mean, ev_sol.c_max,
+        p_av, p_act, p_CLC, p_dev, p_res, gamma, dt,
+        omega_plage, k_plage, k_idx,
+    )

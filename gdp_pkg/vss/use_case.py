@@ -10,7 +10,6 @@ VSS = Profit_SP - Profit_EEV ≥ 0
 """
 
 from __future__ import annotations
-import numpy as np
 
 from ..config import GDPConfig, ADMMConfig
 from ..population import FspPopulation
@@ -54,8 +53,6 @@ def compute_vss(
     -------
     VSSResult con profit_sp, profit_eev, vss y ev_solution
     """
-    K_DOBLE = np.concatenate([pop.K_AM, pop.K_PM])
-
     # ── 1. Profit de la solución estocástica (SP) ──────────────────────
     profit_sp = compute_profit(
         p_av=cfg.p_av,
@@ -67,11 +64,10 @@ def compute_vss(
         dt=cfg.dt,
         omega_plage=cfg.OMEGA_PLAGE,
         k_plage=pop.K_PLAGE,
-        k_doble=K_DOBLE,
-        eta_k=sp_result.eta_k,
+        k_idx=pop.K_idx,
+        F_all=sp_result.F_all,
+        eta_val=float(sp_result.eta_k.mean()),
         c_max=sp_result.c_max_opt,
-        q_k=sp_result.q_k,
-        c_k=sp_result.c_k,
     )
 
     # ── 2. Resolver Problema EV (determinístico, S=1) ─────────────────

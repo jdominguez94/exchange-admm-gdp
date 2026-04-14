@@ -91,7 +91,7 @@ class GDPConfig:
     @property
     def p_dev(self) -> float:
         """Penalidad de shortfall: 5 × p_act."""
-        return self.p_act * 5
+        return self.p_act * 2
 
     @property
     def p_CLC(self) -> float:
@@ -118,7 +118,7 @@ class ADMMConfig:
     max_iter: int = 200      # máximo de iteraciones
     eps_primal: float = 1e-3 # tolerancia residual primal ‖r_p‖ < ε_p
     eps_dual: float = 1e-3   # tolerancia residual dual   ‖r_d‖ < ε_d
-    mu_res: float = 20.0     # ratio antes de adaptar ρ (Boyd §3.4.1)
+    mu_res: float = 8.0     # ratio antes de adaptar ρ (Boyd §3.4.1)
     tau_incr: float = 1.2    # factor de incremento/decremento de ρ
     rho_max: float = 10.0    # cota superior de ρ
     rho_min: float = 1e-4    # cota inferior de ρ

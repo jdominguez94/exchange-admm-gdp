@@ -31,7 +31,7 @@ from gdp_pkg.vss import compute_vss
 def main() -> None:
     # ── Configuración ──────────────────────────────────────────────────
     cfg = GDPConfig(
-        N=60, T=96, dt=0.25, S=10,
+        N=20, T=96, dt=0.25, S=10,
         SEED=42, N_WORKERS=96,
         GDP_RATE_WINTER=5.5,
         p_act=0.52, pi_t=0.0621,
@@ -43,7 +43,7 @@ def main() -> None:
         OMEGA_PLAGE=np.array([0.55, 0.11, 0.34]),
         H_AM_START=6, H_AM_END=9,
         H_PM_START=16, H_PM_END=20,
-        GRUPOS_ALPHA={'A': 15, 'B': 15, 'C': 15, 'D': 15},
+        GRUPOS_ALPHA={'A': 5, 'B': 5, 'C': 5, 'D': 5},
         theta_s=0.2,
     )
     cfg.validate()
