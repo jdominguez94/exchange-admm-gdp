@@ -170,6 +170,8 @@ def run_exchange_admm(
             q_k, r_k, c_k, eta_k, c_max_val = solve_aggregator(
                 cfg, pop, baseline.eta_max_eff,
                 sigma_by_scenario, lam, rho, sum_Ft_k,
+                mu_k_power=baseline.mu_k_power,
+                sigma_k_power=baseline.sigma_k_power,
             )
 
             # ── Step 2a: x̄^{n+½} ────────────────────────────────────

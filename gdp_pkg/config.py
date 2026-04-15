@@ -45,7 +45,8 @@ class GDPConfig:
     gamma: float = 0.00
     p_CLC_factor: float = 1.5     # p_CLC = p_act * p_CLC_factor
     p_res: float = 2.0
-    C_max: float = 15.0           # kWh — capacidad máxima CLC por periodo
+    C_max: float = 60.0           # kW — potencia máxima del CLC (= 15 kWh/periodo ÷ dt)
+    alpha_delivery: float = 0.99  # nivel de confianza para buffer de entrega FSP
 
     # ── Límites contractuales del agregador ──────────────────────────
     eta_min: float = 10.0         # kW — mínimo contractual

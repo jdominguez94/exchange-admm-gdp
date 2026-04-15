@@ -22,7 +22,7 @@ class DetEquivSolution:
     Attributes
     ----------
     eta_mean : potencia declarada al operador GDP [kW]
-    c_max    : capacidad CLC contratada [kWh/periodo]
+    c_max    : capacidad CLC contratada [kW]
     F_all    : (N, K) ofertas de primera etapa de los FSPs [kWh]
     """
     eta_mean: float
@@ -108,7 +108,7 @@ def _profit_from_F(
         ])
         F_sp  = F_sum[k_pos]                         # (|K^sp|,) [kWh]
         gap   = eta_val * dt - F_sp                  # déficit por periodo [kWh]
-        c_sp  = np.clip(gap, 0.0, c_max)             # CLC óptimo [kWh]
+        c_sp  = np.clip(gap, 0.0, c_max * dt)         # CLC óptimo [kWh] ≤ c_max[kW]·dt[h]
         q_sp  = F_sp + c_sp                          # entrega total [kWh]
 
         q_total   = float(np.sum(q_sp))

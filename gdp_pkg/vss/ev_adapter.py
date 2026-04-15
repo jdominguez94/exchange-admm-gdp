@@ -70,6 +70,7 @@ def solve_ev_problem(
         baseline,
         u_base_scenarios=baseline.u_base_scenarios.mean(axis=1, keepdims=True),  # (N, 1, T)
         F_cap_scenarios=baseline.F_cap_scenarios.mean(axis=1, keepdims=True),    # (N, 1, K)
+        sigma_k_power=baseline.sigma_k_power,  # EV: misma CC que el SP → VSS ≥ 0 garantizado
     )
 
     # ── Resolver ADMM determinístico ───────────────────────────────────

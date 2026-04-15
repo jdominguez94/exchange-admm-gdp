@@ -50,7 +50,9 @@ class BaselineResult:
     F_cap: np.ndarray
     F_cap_scenarios: np.ndarray
     u_base_scenarios: np.ndarray
-    eta_max_eff: float
+    eta_max_eff:   float
+    mu_k_power:    np.ndarray   # (K,) media de entrega agregada FSPs [kW]
+    sigma_k_power: np.ndarray   # (K,) desv. est. entrega agregada FSPs [kW]
 
 
 class _BaselineProblem:
@@ -197,6 +199,11 @@ def solve_baselines(
         for i in range(N)
     ])  # (N, S, K)
 
+    # Estadísticas agregadas de entrega FSP [kW] — pasadas al agregador
+    F_sum_s       = F_cap_scenarios.sum(axis=0)          # (S, K) [kWh]
+    mu_k_power    = F_sum_s.mean(axis=0) / cfg.dt        # (K,) [kW]
+    sigma_k_power = F_sum_s.std(axis=0)  / cfg.dt        # (K,) [kW]
+
     return BaselineResult(
         u_base_heat=u_base_heat,
         u_base_total=u_base_total,
@@ -205,4 +212,6 @@ def solve_baselines(
         F_cap_scenarios=F_cap_scenarios,
         u_base_scenarios=u_base_scenarios,
         eta_max_eff=eta_max_eff,
+        mu_k_power=mu_k_power,
+        sigma_k_power=sigma_k_power,
     )

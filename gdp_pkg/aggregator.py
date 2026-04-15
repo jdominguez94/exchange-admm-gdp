@@ -10,7 +10,7 @@ de activación GDP (plage horaria: AM, PM, AM+PM) y optimiza sobre ellos.
 Problema (dos etapas estocásticas):
   Primera etapa (here-and-now):
     η  — potencia declarada al operador [kW]   (escalar, no-anticipativa)
-    c_max — capacidad CLC contratada [kWh/periodo]  (escalar)
+    c_max — capacidad CLC contratada [kW]  (escalar)
 
   Segunda etapa (recourse, por escenario s de plage):
     r^s_k — shortfall real [kWh]: déficit tras FSPs + CLC
@@ -36,6 +36,7 @@ Nota: Σ_i F̃^s_{i,k} entra como dato externo (señal ADMM), NO como variable.
 from __future__ import annotations
 import numpy as np
 import cvxpy as cp
+from scipy.stats import norm
 
 from .config import GDPConfig
 from .population import FspPopulation
@@ -49,6 +50,8 @@ def solve_aggregator(
     lam: np.ndarray,
     rho: float,
     sum_F_tilde_k: np.ndarray,
+    mu_k_power:    np.ndarray,   # (K_full,) media entrega agregada FSPs [kW]
+    sigma_k_power: np.ndarray,   # (K_full,) desv. est. [kW]
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
     """Resuelve el subproblema del agregador.
 
@@ -76,7 +79,7 @@ def solve_aggregator(
 
     # ── Primera etapa ─────────────────────────────────────────────────
     eta   = cp.Variable(nonneg=True)    # potencia declarada [kW]
-    c_max = cp.Variable(nonneg=True)    # cap. CLC contratada [kWh/periodo]
+    c_max = cp.Variable(nonneg=True)    # cap. CLC contratada [kW]
 
     # ── Segunda etapa: variables por escenario de plage ───────────────
     r_vars = []  # shortfall  [kWh]
@@ -107,7 +110,7 @@ def solve_aggregator(
         # ADMM proximal: acoplamiento sobre q^s_k
         sigma_sp = sigma_by_scenario[sp, local_pos]
         lam_sp   = lam[local_pos]
-        lin_dual = lam_sp @ c_vars[sp]
+        lin_dual = lam_sp @ q_sp #c_vars[sp]
         prox_aug = (rho / 2) * cp.sum_squares(q_sp - sigma_sp)
 
         term = cfg.OMEGA_PLAGE[sp] * (
@@ -118,7 +121,12 @@ def solve_aggregator(
     objective = cp.Maximize(rev_avail + cp.sum(recourse_terms))
 
     # ── Restricciones ─────────────────────────────────────────────────
-    cons = [eta >= cfg.eta_min, eta <= eta_max_eff]
+    # Equivalente determinístico de la chance constraint:
+    #   P(F_sum_k/dt + c_max ≥ η) ≥ 1−α  ∀k
+    #   ⟺  c_max − η ≥ max_k(−μ_k^power + z_{1−α}·σ_k^power)
+    z_alpha = norm.ppf(cfg.alpha_delivery)
+    cc_rhs  = float(np.max(-mu_k_power + z_alpha * sigma_k_power))  # [kW]
+    cons = [eta >= cfg.eta_min, eta <= eta_max_eff, c_max - eta >= cc_rhs]
 
     for sp in range(S_PLAGE):
         k_idx_local = pop.K_PLAGE[sp]
@@ -127,8 +135,8 @@ def solve_aggregator(
         ])
         sum_F_sp = sum_F_tilde_k[local_pos]
 
-        # CLC acotada por capacidad contratada
-        cons.append(c_vars[sp] <= c_max)
+        # CLC acotada por capacidad contratada: energía [kWh] ≤ potencia [kW] · dt [h]
+        cons.append(c_vars[sp] <= c_max * dt)
 
         # Shortfall = déficit real: r^s_k ≥ η·dt - sum_F_sp[k] - c^s_k
         cons.append(r_vars[sp] >= eta * dt - sum_F_sp - c_vars[sp])
