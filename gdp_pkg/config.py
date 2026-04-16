@@ -44,6 +44,7 @@ class GDPConfig:
     pi_t: float = 0.0621
     gamma: float = 0.00
     p_CLC_factor: float = 1.5     # p_CLC = p_act * p_CLC_factor
+    p_dev_factor: float = 2.0     # p_dev = p_act * p_dev_factor
     p_res: float = 2.0
     C_max: float = 60.0           # kW — potencia máxima del CLC (= 15 kWh/periodo ÷ dt)
     alpha_delivery: float = 0.99  # nivel de confianza para buffer de entrega FSP
@@ -91,8 +92,8 @@ class GDPConfig:
 
     @property
     def p_dev(self) -> float:
-        """Penalidad de shortfall: 5 × p_act."""
-        return self.p_act * 2
+        """Penalidad de shortfall: p_act * p_dev_factor."""
+        return self.p_act * self.p_dev_factor
 
     @property
     def p_CLC(self) -> float:

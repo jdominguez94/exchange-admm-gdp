@@ -33,10 +33,11 @@ def main() -> None:
     cfg = GDPConfig(
         N=20, T=96, dt=0.25, S=10,
         SEED=42, N_WORKERS=96,
-        GDP_RATE_WINTER=5.5,
+        GDP_RATE_WINTER=5, 
+        p_dev_factor=5,
         p_act=0.52, pi_t=0.0621,
-        gamma=0.00, p_CLC_factor=1.5,
-        p_res=2.0, C_max=15.0,
+        gamma=0.00, p_CLC_factor=2,
+        p_res=2.0, C_max=60.0,
         eta_min=10.0, eta_max=100.0,
         ALPHA_HEADROOM=0.8,
         SIGMA_BASELINE=0.03,
@@ -74,7 +75,7 @@ def main() -> None:
     print(f"   θ = {pop.theta:.4f} CAD/°C²  |  K = {len(pop.K_idx)} periodos")
 
     print("3. Calculando baselines QP...")
-    baseline = solve_baselines(cfg, pop, profiles)
+    baseline = solve_baselines(cfg, pop, profiles, rng)
     print(f"   η_max_eff = {baseline.eta_max_eff:.2f} kW  |"
           f"  F_cap medio = {baseline.F_cap.mean():.3f} kWh/FSP")
 

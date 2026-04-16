@@ -75,7 +75,7 @@ def compute_vss(
         cfg, admm_cfg, pop, baseline, verbose=verbose
     )
 
-    # ── 3. Evaluar EEV bajo escenarios GDP reales ─────────────────────
+    # ── 3. Evaluar EEV bajo escenarios climáticos y GDP reales ───────────
     profit_eev = compute_eev_profit(
         p_av=cfg.p_av,
         p_act=cfg.p_act,
@@ -88,6 +88,8 @@ def compute_vss(
         k_plage=pop.K_PLAGE,
         k_idx=pop.K_idx,
         ev_sol=ev_sol,
+        F_cap_scenarios=baseline.F_cap_scenarios,   # (N, S, K) escenarios originales
+        omega_climate=pop.omega,                    # (S,) = 1/S cada uno
     )
 
     # ── 4. VSS ────────────────────────────────────────────────────────

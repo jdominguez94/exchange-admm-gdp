@@ -149,6 +149,7 @@ def solve_baselines(
     cfg: GDPConfig,
     pop: FspPopulation,
     profiles: ProfileData,
+    rng: np.random.Generator | None = None,
 ) -> BaselineResult:
     """Resuelve los N problemas baseline QP y calcula el headroom F_cap.
 
@@ -186,10 +187,11 @@ def solve_baselines(
     eta_max_eff  = min(cfg.eta_max, eta_max_phys)
 
     # Baseline estocástico: u^base_s = u^base · ε^s,  ε ~ LogNormal(μ_ln, σ²)
+    _rng  = rng if rng is not None else np.random.default_rng(cfg.SEED)
     mu_ln = -cfg.SIGMA_BASELINE ** 2 / 2
-    eps   = np.random.default_rng().lognormal(
+    eps   = _rng.lognormal(
         mean=mu_ln, sigma=cfg.SIGMA_BASELINE, size=(N, S)
-    )  # (N, S)  — rng independiente para reproducibilidad
+    )  # (N, S)
     u_base_scenarios = u_base_heat[:, None, :] * eps[:, :, None]  # (N, S, T)
 
     # Headroom estocástico

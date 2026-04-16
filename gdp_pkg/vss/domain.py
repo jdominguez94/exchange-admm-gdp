@@ -161,20 +161,33 @@ def compute_eev_profit(
     p_res: float,
     gamma: float,
     dt: float,
-    omega_plage: np.ndarray,    # (S_plage,) = [0.55, 0.11, 0.34]
-    k_plage: dict,              # {sp: array de índices K}
-    k_idx: list,                # K_idx — lista de periodos de flexibilidad
+    omega_plage: np.ndarray,      # (S_plage,) = [0.55, 0.11, 0.34]
+    k_plage: dict,                # {sp: array de índices K}
+    k_idx: list,                  # K_idx — lista de periodos de flexibilidad
     ev_sol: DetEquivSolution,
+    F_cap_scenarios: np.ndarray,  # (N, S_climate, K) — escenarios originales del SP
+    omega_climate: np.ndarray,    # (S_climate,) — pesos (1/S cada uno)
 ) -> float:
-    """Evalúa el profit usando las decisiones EV bajo los escenarios GDP reales.
+    """Evalúa el EEV aplicando las decisiones EV a los escenarios climáticos reales.
 
-    Recourse de segunda etapa (forma cerrada):
-      gap_k  = η_ev·dt − F_ev_sum_k
-      c_ev_k = clip(gap_k, 0, c_max_ev)
-      q_ev_k = F_ev_sum_k + c_ev_k
+    Para cada escenario climático s, la entrega real de los FSPs está limitada
+    por el headroom factible bajo ese clima:
+
+      F_actual[i,k,s] = min(F_ev[i,k], F_cap_scen[i,s,k])
+
+    Esto captura el coste de sobre-comprometerse bajo el clima promedio (EV):
+    si un escenario frío reduce el headroom por debajo de F_ev, el agregador
+    incurre en mayor uso de CLC o shortfall.
+
+    EEV = E_s[ profit(F_actual_s, η_ev, c_max_ev) ]
+        = Σ_s ω_s · profit(min(F_ev, F_cap_s), η_ev, c_max_ev)
     """
-    return _profit_from_F(
-        ev_sol.F_all, ev_sol.eta_mean, ev_sol.c_max,
-        p_av, p_act, p_CLC, p_dev, p_res, gamma, dt,
-        omega_plage, k_plage, k_idx,
-    )
+    total = 0.0
+    for s, w_s in enumerate(omega_climate):
+        F_actual_s = np.minimum(ev_sol.F_all, F_cap_scenarios[:, s, :])  # (N, K)
+        total += w_s * _profit_from_F(
+            F_actual_s, ev_sol.eta_mean, ev_sol.c_max,
+            p_av, p_act, p_CLC, p_dev, p_res, gamma, dt,
+            omega_plage, k_plage, k_idx,
+        )
+    return total
