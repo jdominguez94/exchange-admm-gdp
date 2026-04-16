@@ -86,15 +86,18 @@ def run_exchange_admm(
     admm_cfg: ADMMConfig,
     pop: FspPopulation,
     baseline: BaselineResult,
+    scenario_tree=None,   # ScenarioTree | None — árbol LMP NY-HQ
 ) -> ADMMResult:
     """Ejecuta el loop Exchange ADMM Boyd §7.3.2 completo.
 
     Parameters
     ----------
-    cfg      : parámetros GDP
-    admm_cfg : hiperparámetros ADMM
-    pop      : población de FSPs
-    baseline : resultado del cálculo de baselines
+    cfg           : parámetros GDP
+    admm_cfg      : hiperparámetros ADMM
+    pop           : población de FSPs
+    baseline      : resultado del cálculo de baselines
+    scenario_tree : ScenarioTree opcional con incertidumbre LMP NY-HQ;
+                    None → comportamiento original (p_CLC fijo)
 
     Returns
     -------
@@ -172,6 +175,7 @@ def run_exchange_admm(
                 sigma_by_scenario, lam, rho, sum_Ft_k,
                 mu_k_power=baseline.mu_k_power,
                 sigma_k_power=baseline.sigma_k_power,
+                scenario_tree=scenario_tree,
             )
 
             # ── Step 2a: x̄^{n+½} ────────────────────────────────────

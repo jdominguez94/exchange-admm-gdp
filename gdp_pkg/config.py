@@ -85,6 +85,12 @@ class GDPConfig:
     )
     theta_s: float = 0.2   # factor de escala para umbral de indiferencia θ
 
+    # ── Árbol de escenarios LMP (interconexión NY-HQ) ────────────────
+    # Cuando use_lmp_tree=True, el árbol ScenarioTree construido en main.py
+    # reemplaza p_CLC con el LMP estocástico (costo de oportunidad industrial).
+    # use_lmp_tree=False preserva el comportamiento original (backward-compatible).
+    use_lmp_tree: bool = False
+
     # ── Propiedades derivadas ─────────────────────────────────────────
     @property
     def p_av(self) -> float:

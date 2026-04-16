@@ -31,23 +31,26 @@ def compute_vss(
     baseline: BaselineResult,
     sp_result: ADMMResult,
     verbose: bool = False,
+    scenario_tree=None,   # ScenarioTree | None
 ) -> VSSResult:
     """Calcula el VSS (Value of the Stochastic Solution) del Agregador.
 
     Pasos:
       1. Extrae Profit_SP de sp_result (solución estocástica ya disponible).
-      2. Resuelve el Problema EV (S=1) → decisiones de primera etapa.
-      3. Evalúa Profit_EEV en forma cerrada bajo escenarios GDP reales.
+      2. Resuelve el Problema EV (S=1, p_CLC=E[LMP] si árbol activo).
+      3. Evalúa Profit_EEV en forma cerrada bajo escenarios GDP y LMP reales.
       4. Retorna VSSResult inmutable.
 
     Parameters
     ----------
-    cfg        : configuración GDP
-    admm_cfg   : hiperparámetros ADMM (reutilizados para el EV solve)
-    pop        : población de FSPs
-    baseline   : resultado de baselines
-    sp_result  : resultado del ADMM estocástico (ya ejecutado)
-    verbose    : si True, muestra la salida del ADMM interno del EV solve
+    cfg           : configuración GDP
+    admm_cfg      : hiperparámetros ADMM (reutilizados para el EV solve)
+    pop           : población de FSPs
+    baseline      : resultado de baselines
+    sp_result     : resultado del ADMM estocástico (ya ejecutado)
+    verbose       : si True, muestra la salida del ADMM interno del EV solve
+    scenario_tree : ScenarioTree opcional con incertidumbre LMP NY-HQ;
+                    None → comportamiento original (p_CLC fijo)
 
     Returns
     -------
@@ -68,14 +71,17 @@ def compute_vss(
         F_all=sp_result.F_all,
         eta_val=float(sp_result.eta_k.mean()),
         c_max=sp_result.c_max_opt,
+        scenario_tree=scenario_tree,
     )
 
-    # ── 2. Resolver Problema EV (determinístico, S=1) ─────────────────
+    # ── 2. Resolver Problema EV (determinístico, S=1, p_CLC=E[LMP]) ───
     ev_sol: DetEquivSolution = solve_ev_problem(
-        cfg, admm_cfg, pop, baseline, verbose=verbose
+        cfg, admm_cfg, pop, baseline,
+        verbose=verbose,
+        scenario_tree=scenario_tree,
     )
 
-    # ── 3. Evaluar EEV bajo escenarios climáticos y GDP reales ───────────
+    # ── 3. Evaluar EEV bajo escenarios climáticos y LMP reales ─────────
     profit_eev = compute_eev_profit(
         p_av=cfg.p_av,
         p_act=cfg.p_act,
@@ -90,6 +96,7 @@ def compute_vss(
         ev_sol=ev_sol,
         F_cap_scenarios=baseline.F_cap_scenarios,   # (N, S, K) escenarios originales
         omega_climate=pop.omega,                    # (S,) = 1/S cada uno
+        scenario_tree=scenario_tree,
     )
 
     # ── 4. VSS ────────────────────────────────────────────────────────

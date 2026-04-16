@@ -26,6 +26,7 @@ from gdp_pkg.population import build_population
 from gdp_pkg.baseline import solve_baselines
 from gdp_pkg.admm import run_exchange_admm
 from gdp_pkg.vss import compute_vss
+from gdp_pkg.scenario_tree import build_nyhq_scenario_tree
 
 
 def main() -> None:
@@ -48,6 +49,12 @@ def main() -> None:
         theta_s=0.2,
     )
     cfg.validate()
+
+    # ── Árbol de escenarios LMP NY-HQ ─────────────────────────────────
+    # E[p_CLC] = 0.775 ≈ p_CLC actual (0.52 × 2 = 1.04... ajustar abajo)
+    # Nota: en esta config p_CLC_factor=2 → p_CLC=1.04. El árbol se calibra
+    # automáticamente respecto a la media del árbol (0.775 CAD/kWh).
+    lmp_tree = build_nyhq_scenario_tree(cfg.OMEGA_PLAGE)
 
     admm_cfg = ADMMConfig(
         rho=0.05,
@@ -79,15 +86,16 @@ def main() -> None:
     print(f"   η_max_eff = {baseline.eta_max_eff:.2f} kW  |"
           f"  F_cap medio = {baseline.F_cap.mean():.3f} kWh/FSP")
 
-    print("4. Exchange ADMM...")
-    result = run_exchange_admm(cfg, admm_cfg, pop, baseline)
+    print("4. Exchange ADMM (árbol LMP NY-HQ: Low/Med/High)...")
+    result = run_exchange_admm(cfg, admm_cfg, pop, baseline, scenario_tree=lmp_tree)
 
     # ── Resultados ─────────────────────────────────────────────────────
     _print_results(cfg, pop, baseline, result)
 
-    print("5. Calculando VSS (Problema EV con S=1)...")
-    vss_result = compute_vss(cfg, admm_cfg, pop, baseline, result)
-    _print_vss(vss_result)
+    print("5. Calculando VSS (Problema EV con S=1, p_CLC=E[LMP])...")
+    vss_result = compute_vss(cfg, admm_cfg, pop, baseline, result,
+                             scenario_tree=lmp_tree)
+    _print_vss(vss_result, lmp_tree)
 
     # ── Guardar ────────────────────────────────────────────────────────
     os.makedirs('results', exist_ok=True)
@@ -95,7 +103,7 @@ def main() -> None:
     with open(fname, 'wb') as f:
         pickle.dump({
             'cfg': cfg, 'admm_cfg': admm_cfg, 'result': result,
-            'vss': vss_result,
+            'vss': vss_result, 'lmp_tree': lmp_tree,
         }, f)
     print(f"\nResultados guardados en: {fname}")
     print(f"Tiempo total: {time.time() - t0:.1f}s")
@@ -107,9 +115,9 @@ def _print_config(cfg: GDPConfig) -> None:
     print("=" * 65)
     print(f"  N={cfg.N} FSPs  |  T={cfg.T} periodos  |  S={cfg.S} escenarios")
     print(f"  p_av   = {cfg.p_av:.3f} CAD/kW  (crédito GDP)")
-    print(f"  p_act  = {cfg.p_act:.4f} CAD/kWh  (activación)")
-    print(f"  p_dev  = {cfg.p_dev:.4f} CAD/kWh  (penalidad shortfall)")
-    print(f"  p_CLC  = {cfg.p_CLC:.4f} CAD/kWh  (backup industrial)")
+    print(f"  p_act  = {cfg.p_act:.4f} CAD/kWh  (activación, FIJO)")
+    print(f"  p_dev  = {cfg.p_dev:.4f} CAD/kWh  (penalidad shortfall, FIJO)")
+    print(f"  p_CLC  = ESTOCÁSTICO  ← árbol LMP NY-HQ (Low/Med/High)")
     print(f"  η_max  = {cfg.eta_max:.0f} kW  |  η_min = {cfg.eta_min:.0f} kW")
     print(f"  ω = {cfg.OMEGA_PLAGE}  (AM, PM, AM+PM)")
     print()
@@ -166,17 +174,24 @@ def _print_results(cfg, pop, baseline, result) -> None:
     print(f"  Wall time      : {result.wall_time:.1f}s")
 
 
-def _print_vss(vss_result) -> None:
+def _print_vss(vss_result, lmp_tree=None) -> None:
     ev = vss_result.ev_solution
     print()
     print("=" * 65)
     print("VSS — Value of the Stochastic Solution")
     print("=" * 65)
+    if lmp_tree is not None:
+        for s in lmp_tree.lmp_scenarios:
+            print(f"  LMP {s.label:<4}: p_CLC={s.p_CLC_eff:.2f} CAD/kWh"
+                  f"  (ν={s.nu:.2f},"
+                  f" margen={(0.52 - s.p_CLC_eff):+.2f} CAD/kWh)")
+        print(f"  E[p_CLC] = {lmp_tree.p_CLC_mean:.3f} CAD/kWh  (usado por EV)")
+        print()
     print(f"  Profit SP  (estocástico) : {vss_result.profit_sp:>10.4f} CAD")
     print(f"  Profit EEV (det. → stoc) : {vss_result.profit_eev:>10.4f} CAD")
     print(f"  VSS = SP − EEV           : {vss_result.vss:>10.4f} CAD"
           f"  ({'≥0 ✓' if vss_result.vss >= -1e-6 else '<!> negativo'})")
-    print(f"  η_ev                     : {ev.eta_mean:>10.3f} kW")
+    print(f"  η_sp                     : {vss_result.ev_solution.eta_mean:>10.3f} kW  (EV)")
     print(f"  c_max_ev                 : {ev.c_max:>10.3f} kWh")
     print(f"  F_ev medio por FSP       : {ev.F_all.mean():>10.4f} kWh")
 
