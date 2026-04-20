@@ -173,8 +173,6 @@ def run_exchange_admm(
             q_k, r_k, c_k, eta_k, c_max_val = solve_aggregator(
                 cfg, pop, baseline.eta_max_eff,
                 sigma_by_scenario, lam, rho, sum_Ft_k,
-                mu_k_power=baseline.mu_k_power,
-                sigma_k_power=baseline.sigma_k_power,
                 scenario_tree=scenario_tree,
             )
 
@@ -304,7 +302,7 @@ def _compute_profit(
     c_k: np.ndarray,
 ) -> float:
     """Calcula el profit esperado del agregador (ex-post)."""
-    rev_avail = cfg.p_av * eta_k.mean() - cfg.p_res * c_max_val
+    rev_avail = cfg.p_av * eta_k.mean() - cfg.clc_reservation_cost(c_max_val)
     exp_act   = 0.0
     for sp in range(len(cfg.OMEGA_PLAGE)):
         local_pos = np.array([np.where(K_DOBLE == k)[0][0]

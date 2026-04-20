@@ -32,20 +32,19 @@ from gdp_pkg.scenario_tree import build_nyhq_scenario_tree
 def main() -> None:
     # ── Configuración ──────────────────────────────────────────────────
     cfg = GDPConfig(
-        N=20, T=96, dt=0.25, S=10,
+        N=100, T=96, dt=0.25, S=10,
         SEED=42, N_WORKERS=96,
-        GDP_RATE_WINTER=5, 
-        p_dev_factor=5,
+        GDP_RATE_WINTER=20, #86/(120/24) = 17.2 CAD/kW - Dia 
+        p_dev_factor=1.2,
         p_act=0.52, pi_t=0.0621,
-        gamma=0.00, p_CLC_factor=2,
-        p_res=2.0, C_max=60.0,
+        p_res=25, C_max=100.0,
         eta_min=10.0, eta_max=100.0,
         ALPHA_HEADROOM=0.8,
-        SIGMA_BASELINE=0.03,
+        SIGMA_BASELINE=0.05,
         OMEGA_PLAGE=np.array([0.55, 0.11, 0.34]),
         H_AM_START=6, H_AM_END=9,
         H_PM_START=16, H_PM_END=20,
-        GRUPOS_ALPHA={'A': 5, 'B': 5, 'C': 5, 'D': 5},
+        GRUPOS_ALPHA={'A': 25, 'B': 25, 'C': 25, 'D': 25},
         theta_s=0.2,
     )
     cfg.validate()
@@ -90,7 +89,7 @@ def main() -> None:
     result = run_exchange_admm(cfg, admm_cfg, pop, baseline, scenario_tree=lmp_tree)
 
     # ── Resultados ─────────────────────────────────────────────────────
-    _print_results(cfg, pop, baseline, result)
+    _print_results(cfg, pop, baseline, result, lmp_tree)
 
     print("5. Calculando VSS (Problema EV con S=1, p_CLC=E[LMP])...")
     vss_result = compute_vss(cfg, admm_cfg, pop, baseline, result,
@@ -104,6 +103,7 @@ def main() -> None:
         pickle.dump({
             'cfg': cfg, 'admm_cfg': admm_cfg, 'result': result,
             'vss': vss_result, 'lmp_tree': lmp_tree,
+            'pop': pop,
         }, f)
     print(f"\nResultados guardados en: {fname}")
     print(f"Tiempo total: {time.time() - t0:.1f}s")
@@ -123,7 +123,7 @@ def _print_config(cfg: GDPConfig) -> None:
     print()
 
 
-def _print_results(cfg, pop, baseline, result) -> None:
+def _print_results(cfg, pop, baseline, result, lmp_tree=None) -> None:
     K_DOBLE = np.concatenate([pop.K_AM, pop.K_PM])
     J       = cfg.N + 1
 
@@ -136,8 +136,9 @@ def _print_results(cfg, pop, baseline, result) -> None:
 
     balance = result.q_k - result.c_k - sum_Ft_full
 
-    rev_avail  = cfg.p_av * result.eta_k.mean() - cfg.p_res * result.c_max_opt
-    exp_act    = 0.0
+    rev_avail    = cfg.p_av * result.eta_k.mean() - cfg.clc_reservation_cost(result.c_max_opt)
+    p_CLC_report = lmp_tree.p_CLC_mean if lmp_tree is not None else cfg.p_CLC
+    exp_act      = 0.0
     for sp in range(len(cfg.OMEGA_PLAGE)):
         local_pos = np.array([np.where(K_DOBLE == k)[0][0]
                                for k in pop.K_PLAGE[sp]])
@@ -145,7 +146,7 @@ def _print_results(cfg, pop, baseline, result) -> None:
         c_sp  = result.c_k[local_pos]
         exp_act += cfg.OMEGA_PLAGE[sp] * (
             cfg.p_act * np.sum(q_sp)
-            - cfg.p_CLC * np.sum(c_sp)
+            - p_CLC_report * np.sum(c_sp)
             - cfg.p_dev * max(0.0,
                 result.eta_k.mean() - np.sum(q_sp) / (len(q_sp) * cfg.dt))
         )

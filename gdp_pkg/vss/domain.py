@@ -76,7 +76,8 @@ def _profit_from_F(
     p_act: float,
     p_CLC: float,               # costo CLC escalar (usado si p_CLC_vec=None)
     p_dev: float,
-    p_res: float,
+    c_max_cost_a: float,
+    c_max_cost_b: float,
     gamma: float,
     dt: float,
     omega_plage: np.ndarray,    # (S_plage,)
@@ -113,7 +114,7 @@ def _profit_from_F(
         p_CLC_vec_eff = p_CLC_vec
         nu_eff        = nu
 
-    rev_avail = (p_av - gamma) * eta_val - p_res * c_max
+    rev_avail = (p_av - gamma) * eta_val - (c_max_cost_a * c_max**2 + c_max_cost_b * c_max)
     F_sum     = F_all.sum(axis=0)       # (K,) — suma sobre N FSPs
     k_idx_arr = np.asarray(k_idx)
     exp_act   = 0.0
@@ -147,7 +148,8 @@ def compute_profit(
     p_act: float,
     p_CLC: float,
     p_dev: float,
-    p_res: float,
+    c_max_cost_a: float,
+    c_max_cost_b: float,
     gamma: float,
     dt: float,
     omega_plage: np.ndarray,    # (S_plage,)
@@ -167,7 +169,7 @@ def compute_profit(
     p_CLC_vec, nu = _extract_lmp_params(scenario_tree)
     return _profit_from_F(
         F_all, eta_val, c_max,
-        p_av, p_act, p_CLC, p_dev, p_res, gamma, dt,
+        p_av, p_act, p_CLC, p_dev, c_max_cost_a, c_max_cost_b, gamma, dt,
         omega_plage, k_plage, k_idx,
         p_CLC_vec=p_CLC_vec, nu=nu,
     )
@@ -178,7 +180,8 @@ def compute_eev_profit(
     p_act: float,
     p_CLC: float,
     p_dev: float,
-    p_res: float,
+    c_max_cost_a: float,
+    c_max_cost_b: float,
     gamma: float,
     dt: float,
     omega_plage: np.ndarray,      # (S_plage,) = [0.55, 0.11, 0.34]
@@ -209,7 +212,7 @@ def compute_eev_profit(
         F_actual_s = np.minimum(ev_sol.F_all, F_cap_scenarios[:, s, :])  # (N, K)
         total += w_s * _profit_from_F(
             F_actual_s, ev_sol.eta_mean, ev_sol.c_max,
-            p_av, p_act, p_CLC, p_dev, p_res, gamma, dt,
+            p_av, p_act, p_CLC, p_dev, c_max_cost_a, c_max_cost_b, gamma, dt,
             omega_plage, k_plage, k_idx,
             p_CLC_vec=p_CLC_vec, nu=nu,
         )

@@ -1,0 +1,47 @@
+
+
+\subsection{Aggregator problem}
+\label{sec:aggregator}
+The aggregator acts as an intermediary between $N$ residential flexibility service providers (FSPs) and the grid operator under the GDP program. Its decisions are the availability capacity $\eta$ for each period $k \in \mathcal{K}$ and reserve cost for industrial backup via CLC with capacity $C_{\max}$, paying a fixed reservation cost $p_{\text{res}}$. The aggregator dispatches the flexibility volume $q_k^s$, and residential flexibility $r_k$. This demand is first met by residential FSPs ($r_k^s$ at marginal cost $\lambda_k$), with the CLC resource ($c_k^s$ at cost $p_{\text{CLC}}$) supplementing it if the residential supply is insufficient.
+
+The objective \eqref{eq:Agg_obj} is to maximise the profit $f_0$, balancing deterministic availability revenue against the costs of CLC activation, and quadratic penalties for deviations between committed capacity and actual dispatch. 
+
+\begin{subequations}
+\label{eq:Agg-IEEE-Stochastic}
+\begin{align}
+\max_{\Xi} \quad &  p_{\text{av}} \eta - p_{\text{res}} C_{\max}^s +\sum_{s \in \Omega} \omega_s \left[ \sum_{k \in \mathcal{K}^s} (p_{\text{act}} q^s_k - p_{\text{CLC}} c^s_k - p_{\text{dev}} d^s_k) \right] \label{eq:obj_stoch} \\
+\text{s.t.} \quad & \eta = \eta^{s}, \quad C_{\max} = C_{\max}^{s}, \quad \forall s \in \Omega \label{eq:non_anticipativity} \\
+& 0 \leq \eta^s \leq \eta_{\max}, \quad \forall s \in \Omega \label{eq:c1_stoch} \\
+& d^s_k \geq \eta^s \Delta t - q^s_k, \quad \forall s \in \Omega, k \in \mathcal{K}^s \label{eq:c3_stoch} \\
+& c^s_k \leq C_{\max}^s, \quad \forall s \in \Omega, k \in \mathcal{K}^s \label{eq:c4_stoch} \\
+& q^s_k \leq \eta^s \Delta t, \quad \forall s \in \Omega, k \in \mathcal{K}^s \label{eq:c5_stoch} \\
+& q^s_k, c^s_k, d^s_k \geq 0, \quad \forall s \in \Omega, k \in \mathcal{K}^s \label{eq:c6_stoch}
+\end{align}
+\end{subequations}
+
+where $\Xi_0 = \{\eta_{k},q_{k},c_{k}, C_{\text{max}}\}$ is the set of decision variables and $q^s_k =  c^s_k+\sum_{i} \tilde{F}^s_{i,k}$ is an auxiliary variable to model the total offer of flexibility ativation of the aggregator and holds for all scenarios $\forall s \in \Omega$.
+
+Constraint~\eqref{eq:C1} bounds the first-stage availability offer within physical limits. Constraint~\eqref{eq:C2} enforces the energy balance between dispatch sources in each scenario. Constraint~\eqref{eq:C3} links both stages by ensuring the dispatch never exceeds the committed capacity. Constraint~\eqref{eq:C4} limits residential sourcing to the realised flexibility $\tilde{F}_k^s$, making it a recourse restriction for every scenario $s \in \mathcal{S}$. Constraint~\eqref{eq:C5} limits CLC usage at the contracted capacity $C_{\max}$. Ultimately, Constraint ~\eqref{eq:NA} imposes non-anticipativity on $\eta_k$, which must be identical across all scenarios $s \in \mathcal{S}$ since it is decided before any realisation is observed. 
+
+\subsection{Residential flexibility provider}
+
+Each residential FSP $i$ operates a thermostatically controlled load and offers flexibility to the aggregator by reducing its heating power below a pre-computed baseline $u_{i,t}^{\text{base}}$. The problem is formulated as a two-stage stochastic problem. The heating schedule $u_{i,t}$ and the flexibility offer $F_{i,k}$ are first-stage decisions made before the uncertainty is revealed. The indoor temperature trajectory $T^{in,s}_{i,t}$ is a recourse state variable and adapts to each realization of the outdoor temperature $\tilde{T}_{\text{out},t}^s$ and non-shiftable load $\tilde{u}_{\text{nsl},i,t}^s$. The FSP minimises energy cost and expected thermal discomfort, net of the payment received from the aggregator $\lambda_k$ for the flexibility $F_{i,k}$ offered.
+
+\begin{subequations}
+\label{eq:fsp-model}
+\begin{align}
+\min_{\Xi_i} f_i = & \sum_{t \in \mathcal{T}} \pi_t u_{i,t} - \sum_{k \in \mathcal{K}} \lambda_{k}^{n} F_{i,k}   \\
+& + \sum_{s \in \mathcal{S}} \omega^s \sum_{t \in \mathcal{T}} \alpha_i (T^{in,s}_{i,t} - T_i^{\text{ref}})^2 \label{eq:fsp-obj} \\
+\text{s.t.} \quad & F_{i,k} = u_{i,k}^{\text{base}} - u_{i,k}, \quad \forall k, s \label{eq:flex-definition} \\
+& 0 \leq u_{i,t} \leq \min(u_i^{\max}, C_i - \tilde{u}_{\text{nsl},i,t}^s), \ \forall t, s \label{eq:fsp-panel} \\
+& T_{i,t+1}^{\text{in},s} = a_i T^{\text{in},s}_{i,t}+ b_i u_{i,t} + c_i \tilde{T}_{\text{out},t}^s, \ \forall t, s \label{eq:fsp-dyn} \\
+& T_{i,0}^s = T_i^{\text{ref}}, \quad \forall s \in \mathcal{S} \label{eq:fsp-init} \\
+& T_i^{\min} \leq T^{\text{in},s}_{i,t} \leq T_i^{\max}, \quad \forall t ,s \label{eq:fsp-comfort} \\
+& u^s_{i,k} = u_{i,k}, \ F^s_{i,k} = F_{i,k}, \quad \forall t,s \label{eq:fsp-NA}
+\end{align}
+\end{subequations}
+
+\noindent where $\Xi_i = \{F_{i,k}, u_{i,t}, T^{in,s}_{i,t}\}$ is the set of decision variables. $a_i \in (0,1)$ is the building inertia, $b_i > 0$ the heating efficiency, $c_i > 0$ the impact of weather conditions, $\pi_t$ the electricity price, $\alpha_i > 0$ the discomfort weight, $x_i^{\text{ref}}$ the user comfort setpoint, and $\tilde{u}_{\text{NSL},i,t}^s $ the non-shiftable load under scenario~$s$.
+
+Constraint~\eqref{eq:fsp-link} defines the flexibility offer as the energy reduction relative to the baseline. Constraint~\eqref{eq:fsp-Fcap} bounds it by the available headroom. Constraint~\eqref{eq:fsp-panel} limits the
+total power draw to the electrical panel capacity $C_i$, accounting for the non-shiftable load in each scenario, which makes it the coupling constraint between stages. The thermal dynamics~\eqref{eq:fsp-dyn} propagate the indoor temperature under each scenario, initialised at the reference temperature~\eqref{eq:fsp-init}, with comfort bounds enforced in~\eqref{eq:fsp-comfort}. Non-anticipativity Constraints ~\eqref{eq:fsp-NA} enforces that $u_{i,t}$ and $F_{i,k}$ are committed before any scenario realisation is observed.

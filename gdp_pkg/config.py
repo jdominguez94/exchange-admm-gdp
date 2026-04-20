@@ -46,8 +46,10 @@ class GDPConfig:
     p_CLC_factor: float = 1.5     # p_CLC = p_act * p_CLC_factor
     p_dev_factor: float = 2.0     # p_dev = p_act * p_dev_factor
     p_res: float = 2.0
+    c_max_cost_a: float = 0.01    # coef. cuadrático del costo de reserva CLC [CAD/kWh²]
+    c_max_cost_b: float = 0.1     # coef. lineal del costo de reserva CLC [CAD/kWh]
     C_max: float = 60.0           # kW — potencia máxima del CLC (= 15 kWh/periodo ÷ dt)
-    alpha_delivery: float = 0.99  # nivel de confianza para buffer de entrega FSP
+    alpha_delivery: float = 0.90  # nivel de confianza para buffer de entrega FSP
 
     # ── Límites contractuales del agregador ──────────────────────────
     eta_min: float = 10.0         # kW — mínimo contractual
@@ -98,8 +100,12 @@ class GDPConfig:
 
     @property
     def p_dev(self) -> float:
-        """Penalidad de shortfall: p_act * p_dev_factor."""
-        return self.p_act * self.p_dev_factor
+        """Penalidad de shortfall: p_av * p_dev_factor."""
+        return self.p_av * self.p_dev_factor
+
+    def clc_reservation_cost(self, c_max_val: float) -> float:
+        """Costo cuadrático de reservar capacidad CLC: a·c² + b·c."""
+        return self.c_max_cost_a * c_max_val**2 + self.c_max_cost_b * c_max_val
 
     @property
     def p_CLC(self) -> float:

@@ -22,7 +22,7 @@ Problema (dos etapas, árbol GDP × LMP):
     r^{s,l}_k — shortfall real [kWh]
     c^{s,l}_k — activación CLC [kWh]
 
-  max  (p_av - γ)·η  -  p_res·c_max
+  max  (p_av - γ)·η  -  (a·c_max² + b·c_max)
        + Σ_{s,l} ω_s·ν_l · Σ_{k∈K^s} [
            p_act   · q^{s,l}_k          ← p_act FIJO (pago de HQ)
          - p_CLC_l · c^{s,l}_k          ← p_CLC_l = LMP_l ESTOCÁSTICO
@@ -46,8 +46,6 @@ Sin árbol LMP (scenario_tree=None): L=1, ν=[1], p_CLC_vec=[cfg.p_CLC]
 from __future__ import annotations
 import numpy as np
 import cvxpy as cp
-from scipy.stats import norm
-
 from .config import GDPConfig
 from .population import FspPopulation
 
@@ -60,8 +58,6 @@ def solve_aggregator(
     lam: np.ndarray,
     rho: float,
     sum_F_tilde_k: np.ndarray,
-    mu_k_power:    np.ndarray,   # (K_full,) media entrega agregada FSPs [kW]
-    sigma_k_power: np.ndarray,   # (K_full,) desv. est. [kW]
     scenario_tree=None,          # ScenarioTree | None
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
     """Resuelve el subproblema del agregador (árbol GDP × LMP opcional).
@@ -75,8 +71,6 @@ def solve_aggregator(
     lam              : (K_full,) multiplicadores duales ADMM
     rho              : parámetro de penalización ρ
     sum_F_tilde_k    : (K_full,) Σ_i F̃^s_{i,k} — señal ADMM de la iteración
-    mu_k_power       : (K_full,) media potencia FSPs [kW]
-    sigma_k_power    : (K_full,) desv. est. potencia FSPs [kW]
     scenario_tree    : ScenarioTree con niveles LMP; None → comportamiento original
 
     Returns
@@ -116,7 +110,7 @@ def solve_aggregator(
             c_vars[sp][l] = cp.Variable(ks, nonneg=True)
 
     # ── Objetivo ──────────────────────────────────────────────────────
-    rev_avail = (cfg.p_av - cfg.gamma) * eta - cfg.p_res * c_max
+    rev_avail = (cfg.p_av - cfg.gamma) * eta - (cfg.c_max_cost_a * cp.square(c_max) + cfg.c_max_cost_b * c_max)
 
     recourse_terms = []
     for sp in range(S_PLAGE):
@@ -150,9 +144,7 @@ def solve_aggregator(
     objective = cp.Maximize(rev_avail + cp.sum(recourse_terms))
 
     # ── Restricciones ─────────────────────────────────────────────────
-    z_alpha = norm.ppf(cfg.alpha_delivery)
-    cc_rhs  = float(np.max(-mu_k_power + z_alpha * sigma_k_power))  # [kW]
-    cons = [eta >= cfg.eta_min, eta <= eta_max_eff, c_max - eta >= cc_rhs]
+    cons = [eta >= cfg.eta_min, eta <= eta_max_eff]
 
     for sp in range(S_PLAGE):
         k_idx_local = pop.K_PLAGE[sp]

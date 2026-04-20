@@ -109,9 +109,9 @@ def build_nyhq_scenario_tree(omega_plage: np.ndarray) -> ScenarioTree:
     ScenarioTree con L=3 niveles LMP
     """
     lmp_scenarios = (
-        LMPScenario(label='Low',  nu=0.25, p_CLC_eff=0.40),
-        LMPScenario(label='Med',  nu=0.50, p_CLC_eff=0.70),
-        LMPScenario(label='High', nu=0.25, p_CLC_eff=1.30),
+        LMPScenario(label='Low',  nu=0.4, p_CLC_eff=0.2),
+        LMPScenario(label='Med',  nu=0.4, p_CLC_eff=0.70),
+        LMPScenario(label='High', nu=0.2, p_CLC_eff=1.30),
     )
     # Validaciones
     nu_sum = sum(s.nu for s in lmp_scenarios)
