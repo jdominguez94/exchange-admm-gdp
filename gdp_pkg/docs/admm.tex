@@ -10,67 +10,42 @@ plage scenarios with probabilities $\{\omega^s\}$, and let
   \pi_k \;=\; \sum_{\substack{s \in \mathcal{P} \\ k \in \mathcal{K}^s}} \omega^s
 \end{equation}
 denote the marginal activation probability of period $k \in \mathcal{K}$.
-The centralized problem couples the aggregator and the FSPs through the \emph{delivery
-constraint}: every unit committed must be supplied by FSPs or backed by CLC,
+The centralized problem couples the aggregator and the FSPs through the \emph{market-clearing constraint}: every unit of FSP flexibility demanded by the aggregator must be supplied,
 \begin{equation}
 \label{eq:coupling}
 \begin{aligned}
   \min_{\Xi_0,\,\{\Xi_i\}} \quad & f_0(\Xi_0) + \sum_{i=1}^{N} f_i(\Xi_i) \\[4pt]
   \text{s.t.} \quad
-    & q_k^s \;=\; \sum_{i=1}^{N} F_{i,k} \;+\; c_k^s,
-      \quad \forall\,s \in \mathcal{P},\;k \in \mathcal{K}^s
+    & \sum_{i=1}^{N} F_{i,k} \;=\; D_k,
+      \quad \forall\,k \in \mathcal{K}
       \quad :\lambda_k
 \end{aligned}
 \end{equation}
-where $q_k^s \leq \eta\cdot dt$ is the total delivery in scenario~$s$, $F_{i,k}$ is
-FSP~$i$'s first-stage (non-anticipative) offer, and $c_k^s \geq 0$ is the CLC backup.
-The dual variable $\lambda_k$ is the endogenous clearing price.
-The Exchange ADMM decomposes \eqref{eq:coupling} by dualizing this constraint:
-each agent solves a local subproblem augmented with a proximal penalty that drives
-iterates towards market clearing.
+where $D_k \geq 0$ is the aggregator's \emph{demand signal} for FSP flexibility (a first-stage decision variable), $F_{i,k}$ is FSP~$i$'s non-anticipative flexibility offer, and $q_k^s = D_k + c_k^s$ is the total delivery with CLC backup $c_k^s \geq 0$. The dual variable $\lambda_k$ is the endogenous clearing price, and it rises when demand exceeds supply.
 
-\subsection*{ADMM Updates (Gauss–Seidel)}
+The Exchange ADMM decomposes \eqref{eq:coupling} by dualizing the market-clearing constraint: each agent solves a local subproblem augmented with a proximal penalty that drives iterates towards market clearing.
+
+\subsection*{ADMM Updates}
 
 The augmented Lagrangian introduces penalty $\rho > 0$.
-Let $\mathbf{F}^n := \sum_i \mathbf{F}_i^n$ denote the aggregate FSP offer at iteration~$n$.
-The Gauss–Seidel variant proceeds in three steps:
+Let $S_k^n := \sum_i F_{i,k}^n$ denote the aggregate FSP supply at iteration~$n$.
+The algorithm proceeds in three steps:
 
 \paragraph{Step 1 — Aggregator.}
-With $\mathbf{F}^{n}$ fixed, update $\bigl(\eta,\,c_{\max},\,\{q^s,\,c^s\}\bigr)$,
-where $q_k^s := F_k^n + c_k^s$ is total delivery and
-$r_k^s := \eta\cdot dt - q_k^s \geq 0$ is the shortfall (internal to $f_0$,
-penalized as $p_{\mathrm{dev}}\cdot r_k^s$; determined by $\eta$ and $c^s$ once the FSP
-signal $F_k^n$ is fixed):
+Update $\bigl(\eta,\,C_{\max},\,D_k\bigr)$ by solving:
 \begin{equation}
 \label{eq:agg_update}
   \{\Xi_0\}^{n+1} :=
-    \arg\min_{\Xi_0}
+    \arg\max_{\Xi_0}
     \left(
-      -f_0 \;+\;
-      \sum_{s \in \mathcal{P}}\omega^s\sum_{k \in \mathcal{K}^s}
-      \left[
-        \lambda_k^n q_k^s
-        \;+\;
-        \frac{\rho}{2}\,\bigl\|q_k^s - \sigma_k^{0}\bigr\|^2
-      \right]
+      f_0
+      \;-\; \sum_{k \in \mathcal{K}} \pi_k \lambda_k^n D_k
+      \;-\; \frac{\rho}{2}\,\bigl\|D_k - D_k^{n}\bigr\|^2
     \right)
 \end{equation}
-Since $r_k^s = \eta\cdot dt - q_k^s = \eta\cdot dt - F_k^n - c_k^s$,
-the proximal target depends only on $\eta^n$ and $F_k^n$:
-\begin{equation}
-  \sigma_k^{0} \;=\; \frac{J-1}{J}\,\pi_k\!\left(\eta^n\cdot dt - F_k^{n}\right)
-                \;-\; \frac{1}{J} F_k^{n},
-  \qquad k \in \mathcal{K}.
-\end{equation}
+The dual term $-\pi_k \lambda_k D_k$ internalizes the market price: a high price $\lambda_k$ discourages the aggregator from requesting more flexibility than the FSPs can supply. The proximal term stabilises the iterates around the previous demand signal $D_k^n$.
 
 \paragraph{Step 2 — FSPs (parallel).}
-Define the Gauss–Seidel correction using the freshly updated aggregator:
-\begin{equation}
-\label{eq:xbar_half}
-  \delta_k \;:=\; \frac{1}{J}\!\left[
-    \pi_k\!\left(\eta^{n+1}\cdot dt - F_k^{n}\right) - F_k^{n}
-  \right].
-\end{equation}
 Each FSP~$i$ solves independently:
 \begin{equation}
 \label{eq:fsp_update}
@@ -80,23 +55,21 @@ Each FSP~$i$ solves independently:
       f_i
       \;-\; \sum_{k \in \mathcal{K}} \pi_k\lambda_k^n F_{i,k}
       \;+\; \frac{\rho}{2}\sum_{s}\omega^s
-            \bigl\|\tilde{\mathbf{F}}_{i}^s - \boldsymbol{\sigma}_{i}\bigr\|^2
+            \bigl\|\tilde{F}_{i,k}^s - F_{i,k}^{n}\bigr\|^2
     \right)
 \end{equation}
-with proximal target $\sigma_{i,k} = F_{i,k}^{n} + \delta_k$,
 subject to non-anticipativity $\tilde{F}_{i,k}^s = F_{i,k}\ \forall s \in \mathcal{P}$.
+The price signal $\pi_k \lambda_k^n$ is the same for the aggregator and FSPs, ensuring consistent incentives. The proximal target is simply $F_{i,k}^n$ (the FSP's own previous offer), so the entire market signal is transmitted through the price $\lambda_k$.
 
 \paragraph{Step 3 — Dual update.}
+The price is updated proportionally to the demand–supply gap:
 \begin{equation}
 \label{eq:dual_update}
-  \lambda_k^{n+1} \;=\; \lambda_k^n \;+\; \frac{\rho\,\pi_k}{J}\,r_{p,k}^{n+1},
+  \lambda_k^{n+1} \;=\; \lambda_k^n \;+\; \frac{\rho}{J}\,r_{p,k}^{n+1},
   \qquad
-  r_{p,k}^{n+1} \;:=\; \mathbb{E}_s\!\left[q_k^{s,n+1} - c_k^{s,n+1}\right]
-                        \;-\; \pi_k F_k^{n+1}
-                 \;=\; \pi_k\!\left(F_k^n - F_k^{n+1}\right),
+  r_{p,k}^{n+1} \;:=\; D_k^{n+1} \;-\; S_k^{n+1}.
 \end{equation}
-where the last equality holds because the aggregator uses $F_k^n$ as a fixed parameter,
-so $q_k^{s,n+1} - c_k^{s,n+1} = F_k^n$ identically.
+When demand exceeds supply ($D_k > S_k$), the price $\lambda_k$ rises, attracting more FSP offers; when supply exceeds demand, the price falls. This is a Walrasian t\^{a}tonnement mechanism that drives the market toward equilibrium.
 
 \subsection*{Convergence}
 
@@ -110,14 +83,16 @@ $\varepsilon^{\mathrm{dual}}$:
 \end{equation}
 where
 \begin{align}
-  r_{p,k}^n &\;=\; \pi_k\!\left(F_k^{n-1} - F_k^{n}\right)
-             && \text{(coupling constraint violation)}, \\[2pt]
-  r_{d,k}^n &\;=\; \rho\!\left(F_k^n - F_k^{n-1}\right)
-             && \text{(dual: FSP offer change)}.
+  r_{p,k}^n &\;=\; D_k^{n} \;-\; S_k^{n}
+             && \text{(demand--supply gap: genuine clearing condition)}, \\[2pt]
+  r_{d,k}^n &\;=\; \rho\!\left(S_k^n - S_k^{n-1}\right)
+             && \text{(dual: change in aggregate FSP supply)}.
 \end{align}
+These two residuals are \emph{genuinely independent}: the primal residual measures market imbalance while the dual residual measures how much the FSPs' collective offer is still adjusting. Convergence of both simultaneously certifies (i) market clearing and (ii) that no agent has an incentive to deviate further.
+
 The penalty $\rho$ is adapted at each iteration following Boyd §3.4.1:
 scaled by $\tau$ when $\|\mathbf{r}_p\| > \mu\|\mathbf{r}_d\|$, and divided when
-$\|\mathbf{r}_d\| > \mu\|\mathbf{r}_p\|$ (parameters: $\tau = 1.2$, $\mu = 20$).
+$\|\mathbf{r}_d\| > \mu\|\mathbf{r}_p\|$ (parameters: $\tau = 1.2$, $\mu = 10$).
 
 Since FSP constraints are coupled only through $\lambda_k$, convergence yields a
 Generalised Nash Equilibrium in which each agent's local decisions align with the

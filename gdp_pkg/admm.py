@@ -4,29 +4,27 @@ admm.py — Loop Exchange ADMM (Boyd §7.3.2) para el problema GDP.
 Patrón: Template Method — la estructura del loop es fija; los subproblemas
         (agregador, FSPs) son llamadas a módulos separados.
 
-Algoritmo Exchange ADMM (Gauss-Seidel):
-  Convención paper: x̄ = (1/J)·[(q-c) - ΣF̃]  >0 cuando demanda>oferta.
+Algoritmo Exchange ADMM con clearing explícito de mercado:
+  D_k — demanda del agregador por flexibilidad FSP (variable de primera etapa).
+  S_k = Σ_i F_{i,k} — oferta agregada de los FSPs.
+  Restricción de clearing: D_k = S_k  ←  dual λ_k.
 
-  Step 1 — Agregador (Gauss-Seidel: fija ΣF̃^n, actualiza (q-c)):
-    x̄^n     = (1/J)·[(q-c)^n - ΣF̃^n]
-    σ^{0,s}_k = ((J-1)/J)·(r^s+c^s)_k - (1/J)·ΣF̃_k   para k ∈ K^s
-    (q,r,c,η) ← argmax Π_agg + λ·(q-c) - (ρ/2)·Σπ·‖(q-c)-σ_0‖²
+  Step 1 — Agregador (actualiza η, c_max, D_k):
+    dado D_k^n, λ^n → resuelve:
+      max f_0 − π_k·λ_k·D_k − (ρ/2)·‖D_k − D_k^n‖²
+    con q^{s,l}_k = D_k + c^{s,l}_k
 
-  Step 2a — Recomputa x̄ con (q-c)^{n+1}:
-    x̄^{n+½} = (1/J)·[(q-c)^{n+1} - ΣF̃^n]
-
-  Step 2b — FSPs en paralelo (J-1 workers):
-    σ_{i,k} = F̃^{s,n}_{i,k} + x̄^{n+½}_k
-    F̃^{n+1} ← argmin Πᵢ - λ̃·F̃ + (ρ/2)·Σπ·‖F̃ - σ_i‖²
-    s.t. F̃^s_i = F_i ∀s   (no-anticipatividad)
+  Step 2 — FSPs en paralelo (actualiza F_{i,k}):
+    dado F_i^n, λ^n → resuelve:
+      min f_i − π_k·λ_k·F_{i,k} + (ρ/2)·‖F_{i,k} − F_i^n‖²
 
   Step 3 — Actualización dual:
-    x̄^{n+1}  = (1/J)·[(q-c)^{n+1} - ΣF̃^{n+1}]
-    λ^{n+1}  = λ^n + ρ·[(q-c)^{n+1} - ΣF̃^{n+1}]
+    r_p = D_k^{n+1} − S_k^{n+1}          (gap demanda-oferta, clearing explícito)
+    λ^{n+1} = λ^n + (ρ/J)·r_p
 
-  Residuales:
-    ‖r_p‖ = ‖E[(q-c)^{n+1} - ΣF̃^{n+1}]‖₂    (desequilibrio esperado)
-    ‖r_d‖ = ρ · ‖ΣF̃^{n+1} - ΣF̃^n‖₂          (cambio en oferta)
+  Residuales (genuinamente independientes):
+    ‖r_p‖ = ‖D_k^{n+1} − S_k^{n+1}‖₂   (desequilibrio de mercado)
+    ‖r_d‖ = ρ · ‖S_k^{n+1} − S_k^n‖₂   (cambio en oferta FSP)
 
   Adaptación de ρ (Boyd §3.4.1):
     if ‖r_p‖ > μ·‖r_d‖: ρ ← min(τ·ρ, ρ_max)
@@ -79,6 +77,7 @@ class ADMMResult:
     lam:          np.ndarray   # (K_full,) precio de liquidación [CAD/kWh·dt]
     c_max_opt:    float
     wall_time:    float
+    D_k_opt:      np.ndarray   # (K_full,) demanda óptima de flexibilidad FSP
 
 
 def run_exchange_admm(
@@ -118,6 +117,7 @@ def run_exchange_admm(
     lam         = np.full(K_full, LAM_INIT)
     F_all       = F_INIT_FRAC * baseline.F_cap               # (N, K)
     F_tilde_all = np.stack([F_all] * S, axis=0)              # (S, N, K)
+    D_k         = np.zeros(K_full)                           # demanda FSP (nueva variable de estado)
     q_k         = np.zeros(K_full)
     r_k         = np.zeros(K_full)
     c_k         = np.zeros(K_full)
@@ -162,29 +162,24 @@ def run_exchange_admm(
         initargs=(gdict,),
     ) as pool:
         for n in range(admm_cfg.max_iter):
-            sum_Ft_prev_k = F_all.sum(axis=0)                  # (K,) iter anterior
+            sum_Ft_prev_k = F_all.sum(axis=0)   # S_k^n, antes de actualizar FSPs
 
             # ── Step 1: Agregador ──────────────────────────────────────
-            sum_Ft_k = F_all.sum(axis=0)                       # (K,) = (K_full,)
-
-            sigma_by_scenario = _compute_sigma_aggregator(
-                J, K_full, K_DOBLE, pop, q_k, r_k, c_k, sum_Ft_k, cfg
-            )
-            q_k, r_k, c_k, eta_k, c_max_val = solve_aggregator(
+            # D_k^{n+1}: demanda óptima de flexibilidad FSP
+            q_k, r_k, c_k, eta_k, c_max_val, D_k_new = solve_aggregator(
                 cfg, pop, baseline.eta_max_eff,
-                sigma_by_scenario, lam, rho, sum_Ft_k,
+                D_k_prev=D_k, lam=lam, rho=rho, pi_k=pi_k,
                 scenario_tree=scenario_tree,
             )
 
-            # ── Step 2a: x̄^{n+½} ────────────────────────────────────
-            x_bar_half = (r_k + c_k - sum_Ft_k) / J            # (K_full,)
+            # ── Step 2: FSPs en paralelo ──────────────────────────────
+            # Precio efectivo: π_k · λ_k  (igual que antes)
+            lam_fsp = lam_to_fsp(pi_k * lam)
 
-            # ── Step 2b: FSPs en paralelo ─────────────────────────────
-            lam_expected = pi_k * lam                           # (K_full,)
-            lam_fsp      = lam_to_fsp(lam_expected)            # (K,)
-
+            # Sigma FSP = iterado anterior (sin corrección x_bar;
+            # el señal de mercado llega íntegramente a través de λ_k)
             args_list = [
-                (i, lam_fsp, F_tilde_all[0, i, :] + x_bar_half, rho)
+                (i, lam_fsp, F_tilde_all[0, i, :], rho)
                 for i in range(N)
             ]
 
@@ -201,23 +196,16 @@ def run_exchange_admm(
                 x_all[i]             = x_i
             t_fsp = time.time() - t_fsp
 
-            # ── Step 3: Actualización dual ─────────────────────────────
-            sum_Ft_new_k = F_new.sum(axis=0)                   # (K,)
+            # ── Step 3: Residuales y actualización dual ────────────────
+            sum_Ft_new_k = F_new.sum(axis=0)   # S_k^{n+1}
 
-            # Residual primal: E[(q-c) - ΣF̃]
-            q_expected = np.zeros(K_full)
-            for sp in range(len(cfg.OMEGA_PLAGE)):
-                local_pos = np.array([np.where(K_DOBLE == k)[0][0]
-                                       for k in pop.K_PLAGE[sp]])
-                q_expected[local_pos] += (cfg.OMEGA_PLAGE[sp]
-                                          * (r_k[local_pos] + c_k[local_pos]))
+            # Residual primal: gap demanda-oferta  r_p = D_k − S_k
+            res_p_vec = D_k_new - sum_Ft_new_k
+            lam       = lam + (rho / J) * res_p_vec
 
-            res_p_vec  = q_expected - pi_k * sum_Ft_new_k      # (K_full,)
-            lam        = lam + (rho / J) * res_p_vec
-
-            # Residuales escalares
-            pres = np.linalg.norm(res_p_vec)
-            dres = np.linalg.norm(rho * (sum_Ft_new_k - sum_Ft_prev_k))
+            # Residuales escalares (genuinamente independientes)
+            pres = np.linalg.norm(res_p_vec)                              # ‖D − S‖
+            dres = np.linalg.norm(rho * (sum_Ft_new_k - sum_Ft_prev_k))  # ρ·‖ΔS‖
 
             # Adaptación de ρ (Boyd §3.4.1)
             rho = _adapt_rho(rho, pres, dres, admm_cfg)
@@ -225,14 +213,17 @@ def run_exchange_admm(
             # Profit ex-post
             profit = _compute_profit(cfg, pop, K_DOBLE, eta_k, c_max_val, q_k, c_k)
 
-            # Registro de historia
+            # Registro de historia  (x_bar = imbalance normalizado por J)
+            x_bar = res_p_vec / J
             _record_history(hist, pres, dres, lam, profit, q_k, c_k,
-                            sum_Ft_new_k, rho, res_p_vec / J, c_max_val, eta_k)
+                            sum_Ft_new_k, rho, x_bar, c_max_val, eta_k)
 
             elapsed = time.time() - t_start
             _print_iter(n, pres, dres, profit, lam, sum_Ft_new_k, q_k,
                         eta_k, c_max_val, rho, elapsed, t_fsp)
 
+            # Actualizar estado
+            D_k         = D_k_new
             F_all       = F_new
             F_tilde_all = F_tilde_new
 
@@ -250,33 +241,11 @@ def run_exchange_admm(
         F_all=F_all, F_tilde_all=F_tilde_all,
         q_k=q_k, r_k=r_k, c_k=c_k, eta_k=eta_k,
         lam=lam, c_max_opt=c_max_val, wall_time=wall_time,
+        D_k_opt=D_k,
     )
 
 
 # ── Helpers internos ───────────────────────────────────────────────────────
-
-def _compute_sigma_aggregator(
-    J: int,
-    K_full: int,
-    K_DOBLE: np.ndarray,
-    pop: FspPopulation,
-    q_k: np.ndarray,
-    r_k: np.ndarray,
-    c_k: np.ndarray,
-    sum_Ft_k: np.ndarray,
-    cfg: GDPConfig,
-) -> np.ndarray:
-    """Calcula σ^{0,s}_k para el subproblema del agregador (Step 1)."""
-    sigma = np.zeros((len(cfg.OMEGA_PLAGE), K_full))
-    for sp in range(len(cfg.OMEGA_PLAGE)):
-        local_pos = np.array([np.where(K_DOBLE == k)[0][0]
-                               for k in pop.K_PLAGE[sp]])
-        rc_sp = r_k[local_pos] + c_k[local_pos]
-        sigma[sp, local_pos] = (
-            ((J - 1) / J) * rc_sp - (1 / J) * sum_Ft_k[local_pos]
-        )
-    return sigma
-
 
 def _adapt_rho(
     rho: float,
