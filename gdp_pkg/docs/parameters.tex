@@ -1,0 +1,210 @@
+% parameters.tex — Tabla de parámetros de simulación GDP Bloc 1 / Exchange ADMM
+% Compilar con un documento principal que incluya: longtable, booktabs, siunitx, multirow
+
+\section*{Simulation Parameters}
+\label{sec:parameters}
+
+All parameter values used in the numerical experiments are listed below.
+Tables~\ref{tab:grid}–\ref{tab:admm} group them by category.
+Derived quantities are marked with a $(\dagger)$ superscript.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection*{Grid and Simulation Settings}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{table}[htbp]
+\centering
+\caption{Grid and simulation parameters.}
+\label{tab:grid}
+\begin{tabular}{lllll}
+\toprule
+Symbol & Parameter & Value & Unit & Source \\
+\midrule
+$N$          & Number of residential FSPs         & 60       & —         & \texttt{GDPConfig.N} \\
+$T$          & Periods per day                    & 96       & —         & \texttt{GDPConfig.T} \\
+$\Delta t$   & Period duration                    & 0.25     & h         & \texttt{GDPConfig.dt} \\
+$S$          & Stochastic scenarios (climate/NSL) & 10       & —         & \texttt{GDPConfig.S} \\
+$|\mathcal{K}|$ & Total flexibility periods ($K_\text{AM} \cup K_\text{PM}$) & 28 & — & derived \\
+$|\mathcal{K}_\text{AM}|$ & Morning window periods (06:00–09:00) & 12 & — & derived \\
+$|\mathcal{K}_\text{PM}|$ & Afternoon window periods (16:00–20:00) & 16 & — & derived \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection*{Financial Parameters}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{table}[htbp]
+\centering
+\caption{Financial and tariff parameters (GDP Bloc~1, Hydro-Québec, winter rate).}
+\label{tab:financial}
+\begin{tabular}{lllll}
+\toprule
+Symbol & Parameter & Value & Unit & Source \\
+\midrule
+$p_\text{av}$   & Availability credit (seasonal)         & 5.50  & \$/kW         & \texttt{GDP\_RATE\_WINTER} \\
+$p_\text{act}$  & Activation payment per energy delivered & 0.52  & \$/kWh        & \texttt{p\_act} \\
+$\pi_t$         & Electricity retail price paid by FSPs  & 0.0621 & \$/kWh       & \texttt{pi\_t} \\
+$\gamma$        & Aggregator overhead per declared kW    & 0.00  & \$/kW         & \texttt{gamma} \\
+$p_\text{CLC}^{\dagger}$ & CLC backup activation cost    & 0.78  & \$/kWh        & $1.5 \times p_\text{act}$ \\
+$p_\text{dev}^{\dagger}$ & Shortfall penalty              & 11.00 & \$/kWh        & $p_\text{av} \times 2$ \\
+$a_\text{res}$  & Quadratic CLC reservation cost coef.  & 0.01  & \$/kWh$^2$    & \texttt{c\_max\_cost\_a} \\
+$b_\text{res}$  & Linear CLC reservation cost coef.     & 0.10  & \$/kWh        & \texttt{c\_max\_cost\_b} \\
+$\bar{C}$       & Maximum CLC backup capacity            & 60.0  & kW            & \texttt{C\_max} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection*{Aggregator Contract and Structural Parameters}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{table}[htbp]
+\centering
+\caption{Aggregator contract limits and delivery parameters.}
+\label{tab:aggregator}
+\begin{tabular}{lllll}
+\toprule
+Symbol & Parameter & Value & Unit & Source \\
+\midrule
+$\eta_\text{min}$      & Minimum declared capacity            & 10.0 & kW & \texttt{eta\_min} \\
+$\eta_\text{max}$      & Maximum declared capacity (ceiling)  & 100.0 & kW & \texttt{eta\_max} \\
+$\alpha_\text{hr}$     & Headroom utilization fraction        & 0.80 & — & \texttt{ALPHA\_HEADROOM} \\
+$\alpha_\text{del}$    & Delivery confidence level            & 0.90 & — & \texttt{alpha\_delivery} \\
+$\sigma_\text{base}$   & Baseline forecast error (log-normal) & 3\%  & — & \texttt{SIGMA\_BASELINE} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection*{GDP Activation Scenarios (Plage Scenarios)}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{table}[htbp]
+\centering
+\caption{GDP plage scenarios and activation probabilities.
+Estimated from 37 unique residential activation days (HQ, December~2024–March~2026).
+Design month: January (17 \emph{Pointe} days).}
+\label{tab:plage}
+\begin{tabular}{cllll}
+\toprule
+Scenario $s$ & Description & Active periods $\mathcal{K}^s$ & Probability $\omega^s$ & Source \\
+\midrule
+AM      & Morning only       & $\mathcal{K}_\text{AM}$ (06:00–09:00)                     & 0.55 & \texttt{OMEGA\_PLAGE[0]} \\
+PM      & Afternoon only     & $\mathcal{K}_\text{PM}$ (16:00–20:00)                     & 0.11 & \texttt{OMEGA\_PLAGE[1]} \\
+AM+PM   & Both windows       & $\mathcal{K}_\text{AM} \cup \mathcal{K}_\text{PM}$        & 0.34 & \texttt{OMEGA\_PLAGE[2]} \\
+\midrule
+\multicolumn{3}{l}{Marginal activation probability $\pi_k = \sum_{s:\,k\in\mathcal{K}^s} \omega^s$} & & \\
+\quad $k \in \mathcal{K}_\text{AM}$ only & & & 0.89 & $0.55+0.34$ \\
+\quad $k \in \mathcal{K}_\text{PM}$ only & & & 0.45 & $0.11+0.34$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection*{FSP Thermal Model — Heterogeneous Population}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Parameters are drawn from truncated normal distributions
+$\mathcal{TN}(\mu,\sigma^2; [\ell,u])$ independently for each FSP.
+The thermal dynamics follow a first-order linear model:
+$T^{\text{in}}_{i,t+1} = a_i T^{\text{in}}_{i,t} + b_i u_{i,t} + c_i \tilde{T}_{\text{out},t}$.
+
+\begin{table}[htbp]
+\centering
+\caption{FSP thermal model parameters (heterogeneous population, $N=60$).}
+\label{tab:fsp}
+\begin{tabular}{llllll}
+\toprule
+Symbol & Parameter & $\mu$ & $[\ell,\, u]$ & Unit & Notes \\
+\midrule
+$a_i$           & Building thermal inertia          & 0.998 & $[0.994,\,0.999]$ & — & Dimensionless decay \\
+$b_i$           & Heating efficiency                & 0.020 & $[0.010,\,0.035]$ & °C/kWh & $\sigma=0.004$ \\
+$c_i$           & Outdoor coupling coefficient      & 0.002 & $[0.001,\,0.005]$ & °C/°C & $\sigma=0.001$ \\
+$u_i^{\max}$    & Rated heating power               & 8.5   & $[6.5,\,13.0]$   & kW    & $\sigma=2.0$ \\
+$T_i^{\text{ref}}$ & Comfort setpoint               & 21.0  & $[19.5,\,23.0]$  & °C    & $\sigma=0.8$ \\
+$T_i^{\min}$    & Minimum indoor temperature        & 18.0  & —                 & °C    & Fixed \\
+$T_i^{\max}$    & Maximum indoor temperature        & 25.0  & —                 & °C    & Fixed \\
+$C_i$           & Electrical panel capacity         & 18.0  & $[15.0,\,28.0]$  & kW    & $\sigma=3.0$ \\
+$\alpha_i$      & Discomfort weight (scalar)        & 2.0   & $[1.0,\,5.0]$    & \$/°C$^2$ & $\sigma=0.5$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Discomfort weight groups ($N/4 = 15$ FSPs per group).
+$\theta = \theta_s \cdot p_\text{act} / (\bar{b} \cdot \overline{\Delta x} \cdot 2\Delta t)$
+is the economic indifference threshold.}
+\label{tab:groups}
+\begin{tabular}{cllll}
+\toprule
+Group & Size & High-$\alpha$ windows & $\alpha_\text{hi}/\theta$ range & $\alpha_\text{lo}/\theta$ range \\
+\midrule
+A (rigid AM/PM)        & 15 & 06:00–08:00, 17:00–20:00 & $[2.0,\,4.0]$ & $[0.3,\,0.8]$ \\
+B (rigid extended)     & 15 & 07:00–10:00, 17:00–22:00 & $[2.0,\,4.0]$ & $[0.3,\,0.8]$ \\
+C (price-comparable)   & 15 & 06:00–08:00, 17:00–20:00 & $[0.8,\,1.5]$ & $[0.1,\,0.4]$ \\
+D (constant high/low)  & 15 & all-day (split 50/50)    & $[1.5,\,3.0]$ & $[0.1,\,0.6]$ \\
+\midrule
+\multicolumn{2}{l}{Indifference threshold scale} & $\theta_s = 0.2$ & & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection*{Stochastic Uncertainty Model}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{table}[htbp]
+\centering
+\caption{Stochastic scenario generation parameters ($S=10$ equiprobable scenarios).}
+\label{tab:stochastic}
+\begin{tabular}{lllll}
+\toprule
+Symbol & Parameter & Value & Distribution & Notes \\
+\midrule
+$\omega^s$         & Scenario weight (climate/NSL)  & $1/S = 0.10$ & Uniform     & Independent of GDP plage $\omega^s$ \\
+$\sigma_\text{NSL}(t)$ & NSL forecast error std.   & period-dep.  & Log-normal  & $\tilde{u}_\text{NSL} = u_\text{NSL} e^{\varepsilon}$, $\varepsilon \sim \mathcal{N}(-\sigma^2/2, \sigma^2)$ \\
+$\sigma_T(t)$      & Outdoor temp. forecast error  & $0.5 + 0.15t$ (h) & Normal & Increases throughout day \\
+$\sigma_\text{base}$ & Baseline power forecast error & 3\%          & Log-normal  & $u^{\text{base},s} = u^\text{base} e^\varepsilon$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection*{ADMM Algorithm Hyperparameters}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{table}[htbp]
+\centering
+\caption{Exchange ADMM hyperparameters (Boyd et al.~\cite{stephen_distributed_2011}, \S3.4.1 and \S7.3.2).}
+\label{tab:admm}
+\begin{tabular}{lllll}
+\toprule
+Symbol & Parameter & Value & Unit & Source \\
+\midrule
+$J$                  & Number of agents ($N$ FSPs + 1 aggregator) & 61 & — & $N+1$ \\
+$\rho_0$             & Initial penalty parameter                  & 0.05  & — & \texttt{ADMMConfig.rho} \\
+$\varepsilon^\text{pri}$ & Primal residual tolerance $\|\mathbf{r}_p\|_2 < \varepsilon^\text{pri}$ & $10^{-3}$ & — & \texttt{eps\_primal} \\
+$\varepsilon^\text{dual}$ & Dual residual tolerance $\|\mathbf{r}_d\|_2 < \varepsilon^\text{dual}$ & $10^{-3}$ & — & \texttt{eps\_dual} \\
+$n_\text{max}$       & Maximum iterations                         & 200   & — & \texttt{max\_iter} \\
+$\mu$                & Residual ratio threshold for $\rho$ update & 8.0   & — & \texttt{mu\_res} \\
+$\tau$               & $\rho$ increment/decrement factor           & 1.2   & — & \texttt{tau\_incr} \\
+$\rho_\text{max}$    & Upper bound on $\rho$                      & 10.0  & — & \texttt{rho\_max} \\
+$\rho_\text{min}$    & Lower bound on $\rho$                      & $10^{-4}$ & — & \texttt{rho\_min} \\
+\midrule
+\multicolumn{5}{l}{\textit{Adaptive $\rho$ rule (Boyd \S3.4.1):}} \\
+\multicolumn{5}{l}{%
+  $\rho \leftarrow \min(\tau\rho,\,\rho_\text{max})$ if $\|\mathbf{r}_p\| > \mu\|\mathbf{r}_d\|$;\quad
+  $\rho \leftarrow \max(\rho/\tau,\,\rho_\text{min})$ if $\|\mathbf{r}_d\| > \mu\|\mathbf{r}_p\|$%
+} \\
+\midrule
+\multicolumn{5}{l}{\textit{Residuals (explicit market clearing):}} \\
+\multicolumn{5}{l}{%
+  $r_{p,k}^n = D_k^n - S_k^n$\quad (demand–supply gap);\quad
+  $r_{d,k}^n = \rho(S_k^n - S_k^{n-1})$\quad (change in FSP aggregate offer)%
+} \\
+\bottomrule
+\end{tabular}
+\end{table}

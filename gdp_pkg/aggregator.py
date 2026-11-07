@@ -147,6 +147,7 @@ def solve_aggregator(
         eta >= cfg.eta_min,
         eta <= eta_max_eff,
         D_k <= eta * dt,            # cota superior global sobre D_k
+        c_max <= cfg.C_max,         # tope contractual CLC [kW] — hard constraint
     ]
 
     for sp in range(S_PLAGE):

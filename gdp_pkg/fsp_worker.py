@@ -18,9 +18,11 @@ Problema de minimización del FSP i en la iteración n:
     [Temperatura]       x_min_i ≤ x^s_t ≤ x_max_i,  x^s_0 = x_ref_i        ∀s
     [No-anticipatividad] F̃^s_{i,k} = F_{i,k}  ∀s
 
-Signal proximal (Boyd §7.3.2):
-    σ_{i,k} = F̃^{s,n}_{i,k} + x̄^{n+½}
-    x̄^{n+½} = (1/J)·[(q-c)^{n+1} - Σ_i F̃^{s,n}_i]
+Signal proximal (Boyd §7.3.2, variante Gauss-Seidel):
+    σ_{i,k} = F_{i,k}^n + x̄^n
+    x̄^n = (D_k^{n+1} − S_k^n) / J    [calculado en admm.py, pasado como sigma_k]
+    D_k^{n+1}: demanda óptima del agregador (fresca, ya resuelta en Step 1)
+    S_k^n = Σ_i F_{i,k}^n: oferta agregada antes de actualizar los FSPs
 
 Señal de precio:  λ̃_k = π_k · λ_k   (precio esperado ponderado por P(k activo))
 """

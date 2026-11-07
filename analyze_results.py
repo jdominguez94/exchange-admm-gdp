@@ -155,6 +155,102 @@ def plot_flexibility_profile(d: dict, out_dir: Path) -> None:
     _save(fig, out_dir, f'{d["_fname"]}_perfil_flex')
 
 
+# ── 2b. Perfil de flexibilidad desglosado por franja (AM / PM) ───────────────
+
+def plot_flexibility_profile_por_franja(d: dict, out_dir: Path) -> None:
+    """Genera 6 figuras individuales (W_INDIV × H_INDIV) descomponiendo
+    plot_flexibility_profile en una figura por franja (AM, PM) y por panel:
+      • despacho  : q_k (barras), c_k (CLC), r_k (shortfall)
+      • eta       : η_k potencia declarada
+      • lambda    : λ_k precio de liquidación
+    Nombres de salida:
+      {fname}_perfil_flex_AM_despacho.pdf   (y PM análogo)
+      {fname}_perfil_flex_AM_eta.pdf
+      {fname}_perfil_flex_AM_lambda.pdf
+    """
+    result = d['result']
+    cfg    = d['cfg']
+    pop    = d.get('pop')
+    fname  = d['_fname']
+
+    if pop is None:
+        print('    [skip perfil_flex_franja] pop no disponible')
+        return
+
+    n_AM = len(pop.K_AM)
+    n_PM = len(pop.K_PM)
+
+    # Horas reales de cada período (eje X)
+    t_AM = pop.K_AM * cfg.dt   # [h]  06.00–08.75
+    t_PM = pop.K_PM * cfg.dt   # [h]  16.00–19.75
+
+    def _xticks(t_arr):
+        """Labels de hora a cada 4 períodos (≈ 1h) para no saturar el eje."""
+        step = max(1, len(t_arr) // 6)
+        ticks = np.arange(len(t_arr))[::step]
+        labels = [f'{t_arr[j]:.2f}h' for j in ticks]
+        return ticks, labels
+
+    windows = [
+        ('AM', slice(None, n_AM),   t_AM, 'steelblue',   '(06–09 h)'),
+        ('PM', slice(n_AM, None),   t_PM, 'darkorange',  '(16–20 h)'),
+    ]
+
+    for tag, slc, t_arr, color, hora_label in windows:
+        x_idx = np.arange(len(t_arr))
+        ticks, tick_labels = _xticks(t_arr)
+
+        q_w = result.q_k[slc]
+        c_w = result.c_k[slc]
+        r_w = result.r_k[slc]
+        e_w = result.eta_k[slc]
+        l_w = result.lam[slc]
+
+        # ── 1/3 Despacho ────────────────────────────────────────────────
+        fig, ax = plt.subplots(figsize=(4, 4))
+        ax.bar(x_idx, q_w, color="navy",  alpha=0.85, label='$q_k$', zorder=2)
+        ax.bar(x_idx, c_w, color='tomato', alpha=0.80, label='$c_k$ ',         zorder=3)
+        ax.bar(x_idx, r_w, color='gold',   alpha=0.80, label='$r_k$',    zorder=4)
+        ax.set_xticks(ticks)
+        ax.set_xticklabels(tick_labels, rotation=30, ha='right')
+        ax.set_xlabel(f'Time step $k$ — franja {tag} {hora_label}')
+        ax.set_ylabel('Energy [kWh]')
+        ax.set_ylim([0,100])
+        ax.legend(fontsize=12, ncol=3)
+        plt.tight_layout()
+        _save(fig, out_dir, f'{fname}_perfil_flex_{tag}_despacho')
+
+        # ── 2/3 Potencia declarada η_k ──────────────────────────────────
+        fig, ax = plt.subplots(figsize=(4, 4))
+        ax.step(x_idx, e_w, color='navy', lw=1.5, where='mid', label=r'$\eta_k$ [kW]')
+        ax.fill_between(x_idx, e_w, step='mid', alpha=0.15, color='navy')
+        ax.set_xticks(ticks)
+        ax.set_xticklabels(tick_labels, rotation=30, ha='right')
+        ax.set_xlabel(f'Período $k$ — franja {tag} {hora_label}')
+        ax.set_ylabel('kW')
+        ax.set_title(fr'Potencia declarada $\eta_k$ — {tag}  |  {fname}')
+        ax.legend(fontsize=7)
+        plt.tight_layout()
+        _save(fig, out_dir, f'{fname}_perfil_flex_{tag}_eta')
+
+        # ── 3/3 Precio de liquidación λ_k ───────────────────────────────
+        fig, ax = plt.subplots(figsize=(4, 4))
+        ax.step(x_idx, l_w, color='purple', lw=1.5, where='mid', label=r'$\lambda_k$')
+        ax.fill_between(x_idx, l_w, step='mid', alpha=0.15, color='purple')
+        ax.axhline(cfg.p_act, ls='--', color='navy',       lw=1.0,
+                   label=fr'$p_{{act}}$={cfg.p_act:.3f}')
+        ax.axhline(cfg.p_CLC, ls=':',  color='saddlebrown', lw=1.0,
+                   label=fr'$p_{{CLC}}$={cfg.p_CLC:.3f}')
+        ax.set_xticks(ticks)
+        ax.set_xticklabels(tick_labels, rotation=30, ha='right')
+        ax.set_xlabel(f'Período $k$ — franja {tag} {hora_label}')
+        ax.set_ylabel('CAD/kWh')
+        ax.set_title(fr'Precio de liquidación $\lambda_k$ — {tag}  |  {fname}')
+        ax.legend(fontsize=7, ncol=3)
+        plt.tight_layout()
+        _save(fig, out_dir, f'{fname}_perfil_flex_{tag}_lambda')
+
+
 # ── 3. Heatmap de ofertas FSP ──────────────────────────────────────────────────
 
 def plot_fsp_heatmap(d: dict, out_dir: Path) -> None:
@@ -307,6 +403,326 @@ def plot_vss(d: dict, out_dir: Path) -> None:
     fig.suptitle(f'VSS (Value of the Stochastic Solution) — {d["_fname"]}', fontsize=9)
     plt.tight_layout()
     _save(fig, out_dir, f'{d["_fname"]}_vss')
+
+
+# ── 10. Precio de clearing por franja horaria ─────────────────────────────────
+
+def plot_clearing_price_franja(d: dict, out_dir: Path) -> None:
+    """Precio de clearing λ_k por franja AM/PM, convergencia y verificación del clearing.
+
+    Panel (0,:) — λ_k por período  (barras AM azul / PM naranja)
+    Panel (1,0) — Convergencia de λ a lo largo de las iteraciones ADMM
+    Panel (1,1) — D_k (demanda agregador) vs S_k (oferta FSP): clearing explícito
+    """
+    result   = d['result']
+    cfg      = d['cfg']
+    pop      = d.get('pop')
+    admm_cfg = d.get('admm_cfg')
+
+    if pop is None:
+        print('    [skip clearing price] pop no disponible')
+        return
+
+    lam  = result.lam                         # (K_full,) [CAD/kWh]
+    D_k  = getattr(result, 'D_k_opt',
+                   result.q_k - result.c_k)   # fallback para pickles antiguos
+    S_k  = result.F_all.sum(axis=0)           # (K,) oferta FSP
+
+    n_AM   = len(pop.K_AM)
+    n_PM   = len(pop.K_PM)
+    K_full = n_AM + n_PM
+
+    lam_AM = lam[:n_AM]
+    lam_PM = lam[n_AM:]
+    D_AM   = D_k[:n_AM]
+    D_PM   = D_k[n_AM:]
+    S_AM   = S_k[:n_AM]
+    S_PM   = S_k[n_AM:]
+
+    # Hora real de cada periodo (eje X para AM/PM)
+    t_AM = pop.K_AM * cfg.dt   # [h]
+    t_PM = pop.K_PM * cfg.dt
+
+    fig = plt.figure(figsize=(W_SINGLE, 2.8 * H_ROW))
+    gs  = gridspec.GridSpec(2, 2, figure=fig, hspace=0.55, wspace=0.35)
+
+    # ── Panel (0,:) — λ_k por período ─────────────────────────────────
+    ax0 = fig.add_subplot(gs[0, :])
+
+    k_am_idx = np.arange(n_AM)
+    k_pm_idx = np.arange(n_AM, n_AM + n_PM)
+
+    ax0.bar(k_am_idx, lam_AM, color='steelblue', alpha=0.85, width=0.8, label='AM')
+    ax0.bar(k_pm_idx, lam_PM, color='darkorange', alpha=0.85, width=0.8, label='PM')
+
+    # Referencias de precio
+    ax0.axhline(cfg.p_act, ls='--', color='navy',     lw=1.0,
+                label=fr'$p_{{act}}$={cfg.p_act:.3f}')
+    ax0.axhline(cfg.p_CLC, ls=':',  color='saddlebrown', lw=1.0,
+                label=fr'$p_{{CLC}}$={cfg.p_CLC:.3f}')
+
+    # Separador AM | PM
+    ax0.axvline(n_AM - 0.5, color='gray', lw=0.9, ls='--', alpha=0.6)
+    ylim0 = ax0.get_ylim()
+    ax0.text(n_AM / 2 - 0.5, ylim0[1] * 0.93, 'AM',
+             ha='center', va='top', fontsize=8, color='steelblue', fontweight='bold')
+    ax0.text(n_AM + n_PM / 2 - 0.5, ylim0[1] * 0.93, 'PM',
+             ha='center', va='top', fontsize=8, color='darkorange', fontweight='bold')
+
+    ax0.set_xlabel('Período de flexibilidad $k$')
+    ax0.set_ylabel(r'$\lambda_k$ [CAD/kWh]')
+    ax0.set_title('Precio de clearing $\\lambda_k$ por período')
+    ax0.set_xticks(np.arange(K_full))
+    ax0.set_xticklabels(
+        [f'{h:.1f}h' for h in np.concatenate([t_AM, t_PM])],
+        rotation=45, ha='right', fontsize=5.5,
+    )
+    ax0.legend(ncol=4, fontsize=6.5)
+
+    # ── Panel (1,0) — Convergencia λ a lo largo de iteraciones ─────────
+    ax1 = fig.add_subplot(gs[1, 0])
+    lam_hist = np.array(result.hist.lam)   # (iters, K_full)
+    iters    = np.arange(lam_hist.shape[0])
+
+    lam_am_mean = lam_hist[:, :n_AM].mean(axis=1)
+    lam_pm_mean = lam_hist[:, n_AM:].mean(axis=1)
+    lam_am_std  = lam_hist[:, :n_AM].std(axis=1)
+    lam_pm_std  = lam_hist[:, n_AM:].std(axis=1)
+
+    ax1.plot(iters, lam_am_mean, color='steelblue', lw=1.2, label='AM (media)')
+    ax1.fill_between(iters,
+                     lam_am_mean - lam_am_std,
+                     lam_am_mean + lam_am_std,
+                     alpha=0.20, color='steelblue')
+    ax1.plot(iters, lam_pm_mean, color='darkorange', lw=1.2, label='PM (media)')
+    ax1.fill_between(iters,
+                     lam_pm_mean - lam_pm_std,
+                     lam_pm_mean + lam_pm_std,
+                     alpha=0.20, color='darkorange')
+    ax1.axhline(cfg.p_act, ls='--', color='gray', lw=0.8, label=fr'$p_{{act}}$')
+    if admm_cfg is not None:
+        ax1.axhline(cfg.p_act, ls='--', color='gray', lw=0.8)
+    ax1.set_xlabel('Iteración ADMM')
+    ax1.set_ylabel(r'$\lambda_k$ [CAD/kWh]')
+    ax1.set_title('Convergencia del precio $\\lambda_k$')
+    ax1.legend(fontsize=6.5)
+
+    # ── Panel (1,1) — D_k vs S_k: clearing explícito ──────────────────
+    ax2 = fig.add_subplot(gs[1, 1])
+
+    width = 0.35
+    ax2.bar(k_am_idx - width/2, D_AM, width=width,
+            color='steelblue', alpha=0.75, label=r'$D_k$ (demanda)')
+    ax2.bar(k_pm_idx - width/2, D_PM, width=width,
+            color='darkorange', alpha=0.75)
+    ax2.bar(k_am_idx + width/2, S_AM, width=width,
+            color='steelblue', alpha=0.40, hatch='//', label=r'$S_k$ (oferta FSP)')
+    ax2.bar(k_pm_idx + width/2, S_PM, width=width,
+            color='darkorange', alpha=0.40, hatch='//')
+
+    # Gap normalizado como anotación
+    gap_norm = np.linalg.norm(D_k - S_k)
+    ax2.set_title(f'Clearing: $D_k$ vs $S_k$  ($\\|D-S\\|={gap_norm:.3f}$ kWh)')
+    ax2.axvline(n_AM - 0.5, color='gray', lw=0.8, ls='--', alpha=0.6)
+    ax2.set_xlabel('Período $k$')
+    ax2.set_ylabel('Flexibilidad [kWh]')
+    ax2.legend(fontsize=6.5)
+
+    fig.suptitle(f'Precio de clearing por franja — {d["_fname"]}', fontsize=9)
+    _save(fig, out_dir, f'{d["_fname"]}_clearing_price_franja')
+
+
+# ── 11. Orden de mérito (pay-as-clear) ────────────────────────────────────────
+
+def plot_merit_order(d: dict, out_dir: Path) -> None:
+    """Orden de mérito y usuarios despachados (pay-as-clear).
+
+    Para cada franja (AM, PM):
+      — Curva de oferta acumulada: FSPs ordenados por tasa de utilización
+        (proxy del costo marginal implícito). El cruce con D_k identifica
+        la unidad marginal y separa inframarginal / extramarginal.
+      — Anotación del precio de clearing uniforme λ_k (pay-as-clear).
+
+    Panel inferior: heatmap de utilización F_{i,k}/F_cap_{i,k} para todos
+    los FSPs y períodos, ordenados por participación promedio.
+    """
+    result = d['result']
+    cfg    = d['cfg']
+    pop    = d.get('pop')
+
+    baseline = d.get('baseline')
+    if pop is None:
+        print('    [skip merit order] pop no disponible')
+        return
+
+    F_all   = result.F_all                     # (N, K)
+    # F_cap: preferir baseline.F_cap; fallback = max por FSP
+    if baseline is not None and hasattr(baseline, 'F_cap'):
+        F_cap = baseline.F_cap                 # (N, K) — headroom de baseline
+    else:
+        F_cap = F_all.max(axis=0, keepdims=True) * np.ones_like(F_all)
+        F_cap = np.where(F_cap > 1e-6, F_cap, 1e-6)
+    lam     = result.lam                       # (K_full,) [CAD/kWh]
+    D_k     = getattr(result, 'D_k_opt',
+                      result.q_k - result.c_k)
+
+    N, K = F_all.shape
+    n_AM = len(pop.K_AM)
+    n_PM = len(pop.K_PM)
+
+    # Tasa de utilización por (FSP, período) — clamp en [0,1]
+    F_cap_safe = np.where(F_cap > 1e-6, F_cap, 1e-6)
+    util       = np.clip(F_all / F_cap_safe, 0.0, 1.0)  # (N, K)
+
+    EPS_IN = 0.01   # umbral: FSP "despachado" si F_{i,k} > EPS_IN kWh
+
+    # Colores por grupo si disponibles
+    GROUP_COLORS = {'A': '#1f77b4', 'B': '#d62728', 'C': '#2ca02c', 'D': '#ff7f0e'}
+    has_groups = hasattr(pop, 'group_labels') and pop.group_labels is not None
+    default_in  = '#4c9be8'
+    default_out = '#cccccc'
+
+    def fsp_color(i: int, in_market: bool) -> str:
+        if has_groups:
+            return GROUP_COLORS.get(pop.group_labels[i], default_in) if in_market else default_out
+        return default_in if in_market else default_out
+
+    fig = plt.figure(figsize=(W_SINGLE, 3.5 * H_ROW))
+    gs  = gridspec.GridSpec(2, 2, figure=fig,
+                            height_ratios=[1.6, 1.0],
+                            hspace=0.55, wspace=0.38)
+
+    # ── Función auxiliar: curva de oferta para una franja ────────────────
+    def _supply_curve(ax, F_w, util_w, D_mean, lam_mean, title, window_color):
+        """
+        F_w    : (N,) oferta media FSP en la franja
+        util_w : (N,) utilización media FSP en la franja
+        D_mean : float — demanda media del agregador
+        lam_mean: float — precio de clearing medio [CAD/kWh]
+        """
+        # Ordenar FSPs por utilización DESC (más barato primero → izquierda)
+        order     = np.argsort(util_w)[::-1]
+        F_sorted  = F_w[order]
+        util_sort = util_w[order]
+        in_market = F_sorted > EPS_IN
+
+        cum_supply = np.concatenate([[0.0], np.cumsum(F_sorted)])
+
+        # Curva de oferta escalonada (step)
+        x_steps = np.repeat(cum_supply, 2)[1:-1]
+        y_steps = np.repeat(util_sort,  2)
+
+        ax.fill_between(x_steps, y_steps, 0,
+                        color=window_color, alpha=0.12, step=None)
+        ax.step(cum_supply[:-1], util_sort, where='post',
+                color=window_color, lw=1.5, label='Oferta acumulada (utilización)')
+
+        # Colorear cada barra FSP por grupo/estado
+        for j, (i_fsp, f_val, u_val) in enumerate(
+                zip(order, F_sorted, util_sort)):
+            col = fsp_color(i_fsp, in_market[j])
+            x0  = cum_supply[j]
+            ax.barh(u_val, f_val, left=x0, height=0.04,
+                    color=col, alpha=0.70, linewidth=0)
+
+        # Demanda D_k (línea vertical)
+        ax.axvline(D_mean, color='crimson', lw=1.5, ls='--',
+                   label=f'$D_k$ = {D_mean:.2f} kWh')
+
+        # Anotación del precio uniforme (pay-as-clear)
+        ax.annotate(
+            f'Pay-as-Clear\n$\\lambda_k$ = {lam_mean:.4f} CAD/kWh',
+            xy=(D_mean, 0.5), xytext=(D_mean * 0.55, 0.65),
+            arrowprops=dict(arrowstyle='->', color='crimson', lw=0.8),
+            fontsize=6.5, color='crimson',
+            bbox=dict(boxstyle='round,pad=0.2', fc='white', ec='crimson',
+                      alpha=0.85, lw=0.7),
+        )
+
+        # Línea umbral: "in" vs "out"
+        ax.axhline(EPS_IN / F_cap_safe.mean(), color='gray',
+                   lw=0.7, ls=':', alpha=0.6)
+        ax.text(cum_supply[-1] * 0.02, EPS_IN / F_cap_safe.mean() + 0.02,
+                'umbral dispatched', fontsize=5.5, color='gray')
+
+        n_in  = int(in_market.sum())
+        n_out = N - n_in
+        ax.set_xlabel('Oferta acumulada [kWh]')
+        ax.set_ylabel('Utilización $F_{i,k}/F_{cap}$\n(proxy costo marginal)')
+        ax.set_title(f'{title}  —  {n_in} FSP despachados / {n_out} fuera')
+        ax.set_ylim(-0.05, 1.08)
+        ax.legend(fontsize=6.5, loc='upper right')
+
+        # Leyenda de grupos (si disponible)
+        if has_groups:
+            handles = [
+                plt.Rectangle((0, 0), 1, 1, color=c, alpha=0.75)
+                for c in GROUP_COLORS.values()
+            ]
+            labels  = [f'Grupo {g}' for g in GROUP_COLORS]
+            ax.legend(handles + ax.get_legend_handles_labels()[0],
+                      labels  + ax.get_legend_handles_labels()[1],
+                      fontsize=5.5, ncol=2, loc='upper right')
+
+    # ── Panel (0,0) — AM ─────────────────────────────────────────────────
+    ax_am = fig.add_subplot(gs[0, 0])
+    F_AM_mean    = F_all[:, :n_AM].mean(axis=1)      # (N,)
+    util_AM_mean = util[:, :n_AM].mean(axis=1)        # (N,)
+    D_AM_mean    = D_k[:n_AM].mean()
+    lam_AM_mean  = lam[:n_AM].mean()
+
+    _supply_curve(ax_am, F_AM_mean, util_AM_mean,
+                  D_AM_mean, lam_AM_mean,
+                  'Orden de mérito — AM (06–09 h)', 'steelblue')
+
+    # ── Panel (0,1) — PM ─────────────────────────────────────────────────
+    ax_pm = fig.add_subplot(gs[0, 1])
+    F_PM_mean    = F_all[:, n_AM:].mean(axis=1)       # (N,)
+    util_PM_mean = util[:, n_AM:].mean(axis=1)         # (N,)
+    D_PM_mean    = D_k[n_AM:].mean()
+    lam_PM_mean  = lam[n_AM:].mean()
+
+    _supply_curve(ax_pm, F_PM_mean, util_PM_mean,
+                  D_PM_mean, lam_PM_mean,
+                  'Orden de mérito — PM (16–20 h)', 'darkorange')
+
+    # ── Panel (1,:) — Heatmap utilización (N × K_full) ───────────────────
+    ax_heat = fig.add_subplot(gs[1, :])
+
+    # Ordenar FSPs por utilización promedio total (desc)
+    util_avg   = util.mean(axis=1)          # (N,)
+    fsp_order  = np.argsort(util_avg)[::-1]
+    util_sorted = util[fsp_order, :]        # (N, K)
+
+    im = ax_heat.imshow(
+        util_sorted, aspect='auto',
+        cmap='RdYlGn', vmin=0, vmax=1,
+        interpolation='nearest',
+        extent=[-0.5, K - 0.5, N - 0.5, -0.5],
+    )
+    plt.colorbar(im, ax=ax_heat,
+                 label=r'Utilización $F_{i,k}/F_{cap}$',
+                 fraction=0.025, pad=0.02)
+
+    # Separador AM | PM
+    ax_heat.axvline(n_AM - 0.5, color='white', lw=1.5, ls='--')
+    ax_heat.text(n_AM / 2 - 0.5, -1.5, 'AM', ha='center', va='top',
+                 fontsize=7.5, color='white', fontweight='bold')
+    ax_heat.text(n_AM + n_PM / 2 - 0.5, -1.5, 'PM', ha='center', va='top',
+                 fontsize=7.5, color='white', fontweight='bold')
+
+    ax_heat.set_xlabel('Período de flexibilidad $k$ (AM → PM)')
+    ax_heat.set_ylabel('FSP $i$  (ord. por utilización media desc.)')
+    ax_heat.set_title(
+        'Tasa de utilización $F_{i,k}/F_{cap}$ '
+        '— inframarginal (verde) / extramarginal (rojo)'
+    )
+
+    fig.suptitle(
+        f'Orden de mérito (pay-as-clear) — {d["_fname"]}',
+        fontsize=9, y=1.01,
+    )
+    _save(fig, out_dir, f'{d["_fname"]}_merit_order')
 
 
 # ── 7. Comparativa multi-run (cuando hay varios pickles) ──────────────────────
@@ -604,12 +1020,15 @@ def main() -> None:
         print(f'\n  [{d["_fname"]}]')
         plot_admm_convergence(d, FIGS_DIR)
         plot_flexibility_profile(d, FIGS_DIR)
+        plot_flexibility_profile_por_franja(d, FIGS_DIR)
         plot_fsp_heatmap(d, FIGS_DIR)
         plot_thermal(d, FIGS_DIR)
         plot_scenario_tree(d, FIGS_DIR)
         plot_vss(d, FIGS_DIR)
         plot_flexibility_by_gdp(d, FIGS_DIR)
         plot_fsp_heterogeneity(d, FIGS_DIR)
+        plot_clearing_price_franja(d, FIGS_DIR)
+        plot_merit_order(d, FIGS_DIR)
 
     if len(data) >= 2:
         print('\n  [comparativa multi-run]')

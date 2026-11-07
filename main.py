@@ -32,19 +32,19 @@ from gdp_pkg.scenario_tree import build_nyhq_scenario_tree
 def main() -> None:
     # ── Configuración ──────────────────────────────────────────────────
     cfg = GDPConfig(
-        N=100, T=96, dt=0.25, S=10,
+        N=96, T=96, dt=0.25, S=10,
         SEED=42, N_WORKERS=96,
-        GDP_RATE_WINTER=20, #86/(120/24) = 17.2 CAD/kW - Dia 
+        GDP_RATE_WINTER=14, # 17.2, #86/(120/24) = 17.2 CAD/kW - Dia de pointe, 86/(120) - Dia de invierno,
         p_dev_factor=1.2,
-        p_act=0.52, pi_t=0.0621,
-        p_res=25, C_max=100.0,
-        eta_min=10.0, eta_max=100.0,
+        p_act=0.52, pi_t=0.07,
+        p_res=25, C_max=400.0,
+        eta_min=100.0, eta_max=400.0,
         ALPHA_HEADROOM=0.8,
         SIGMA_BASELINE=0.05,
         OMEGA_PLAGE=np.array([0.55, 0.11, 0.34]),
         H_AM_START=6, H_AM_END=9,
         H_PM_START=16, H_PM_END=20,
-        GRUPOS_ALPHA={'A': 25, 'B': 25, 'C': 25, 'D': 25},
+        GRUPOS_ALPHA={'A': 32, 'B': 32, 'C': 32, 'D': 32},
         theta_s=0.2,
     )
     cfg.validate()
@@ -56,13 +56,13 @@ def main() -> None:
     lmp_tree = build_nyhq_scenario_tree(cfg.OMEGA_PLAGE)
 
     admm_cfg = ADMMConfig(
-        rho=0.05,
-        max_iter=200,
+        rho=0.7,        # ρ₀ escalado a N=100: tasa efectiva ρ/J=0.5/101≈0.005 (×10 vs antes)
+        max_iter=400,
         eps_primal=1e-3,
         eps_dual=1e-3,
-        mu_res=10.0,
-        tau_incr=1.2,
-        rho_max=10.0,
+        mu_res=5.0,     # dispara adaptación más frecuentemente (Boyd usa 10; bajamos para N grande)
+        tau_incr=1.5,   # adaptación más agresiva (Boyd §3.4.1 recomienda 2.0; 1.5 equilibra estabilidad)
+        rho_max=50.0,   # techo ampliado: con N=100, ρ óptimo puede ser O(10)
         rho_min=1e-4,
     )
 

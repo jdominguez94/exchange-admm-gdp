@@ -117,7 +117,9 @@ def run_exchange_admm(
     lam         = np.full(K_full, LAM_INIT)
     F_all       = F_INIT_FRAC * baseline.F_cap               # (N, K)
     F_tilde_all = np.stack([F_all] * S, axis=0)              # (S, N, K)
-    D_k         = np.zeros(K_full)                           # demanda FSP (nueva variable de estado)
+    # D_k inicializado en S_k^0 = ΣF^0 → residuo primal inicial ≈ 0
+    # Esto evita el gran desequilibrio artificial (‖r_p‖≈52) que ralentiza la convergencia
+    D_k         = F_all.sum(axis=0)                          # (K_full,) demanda FSP = oferta inicial
     q_k         = np.zeros(K_full)
     r_k         = np.zeros(K_full)
     c_k         = np.zeros(K_full)
@@ -176,10 +178,16 @@ def run_exchange_admm(
             # Precio efectivo: π_k · λ_k  (igual que antes)
             lam_fsp = lam_to_fsp(pi_k * lam)
 
-            # Sigma FSP = iterado anterior (sin corrección x_bar;
-            # el señal de mercado llega íntegramente a través de λ_k)
+            # Sigma canónico Gauss-Seidel Exchange ADMM (Boyd §7.3.2):
+            #   σ_i = F_i^n + x̄^n,  x̄^n = (D_k^{n+1} − S_k^n) / J
+            # sum_Ft_prev_k = S_k^n calculado al inicio de la iteración.
+            # D_k_new = D_k^{n+1} fresco del agregador (Gauss-Seidel).
+            # Esto duplica el canal de señal: precio λ_k + corrección proximal,
+            # permitiendo al FSP ver el gap de mercado en la misma iteración.
+            x_bar_k = (D_k_new - sum_Ft_prev_k) / J   # (K,) corrección por agente
+
             args_list = [
-                (i, lam_fsp, F_tilde_all[0, i, :], rho)
+                (i, lam_fsp, F_all[i, :] + x_bar_k, rho)
                 for i in range(N)
             ]
 
@@ -219,7 +227,7 @@ def run_exchange_admm(
                             sum_Ft_new_k, rho, x_bar, c_max_val, eta_k)
 
             elapsed = time.time() - t_start
-            _print_iter(n, pres, dres, profit, lam, sum_Ft_new_k, q_k,
+            _print_iter(n, pres, dres, profit, lam, D_k_new, sum_Ft_new_k,
                         eta_k, c_max_val, rho, elapsed, t_fsp)
 
             # Actualizar estado
@@ -338,22 +346,24 @@ def _print_header(
           f'  π_k PM: {pi_k[K_AM_len:].mean():.3f}')
     print()
     hdr = (f"{'Iter':>6} | {'||r_p||':>10} | {'||r_d||':>10} | "
-           f"{'Profit':>10} | {'λ_mean':>9} | {'ΣF_mean':>9} | "
-           f"{'q_mean':>8} | {'η_mean':>8} | {'C_max':>7} | {'ρ':>7}")
+           f"{'Profit':>10} | {'λ_mean':>9} | "
+           f"{'D_mean':>9} | {'S_mean':>9} | {'D-S_mean':>9} | "
+           f"{'η_mean':>8} | {'C_max':>7} | {'ρ':>7}")
     print(hdr)
     print('-' * len(hdr))
 
 
 def _print_iter(
     n: int, pres: float, dres: float, profit: float,
-    lam: np.ndarray, sum_Ft: np.ndarray, q_k: np.ndarray,
+    lam: np.ndarray, D_k: np.ndarray, sum_Ft: np.ndarray,
     eta_k: np.ndarray, c_max_val: float, rho: float,
     elapsed: float, t_fsp: float,
 ) -> None:
+    ds_mean = (D_k - sum_Ft).mean()
     print(
         f'{n:>6} | {pres:>10.5f} | {dres:>10.5f} | '
         f'{profit:>10.4f} | {lam.mean():>9.5f} | '
-        f'{sum_Ft.mean():>9.4f} | {q_k.mean():>8.4f} | '
+        f'{D_k.mean():>9.4f} | {sum_Ft.mean():>9.4f} | {ds_mean:>+9.4f} | '
         f'{eta_k.mean():>8.3f} | {c_max_val:>7.3f} | {rho:>7.4f}'
         f'  [{elapsed:.0f}s|FSP:{t_fsp:.1f}s]'
     )
